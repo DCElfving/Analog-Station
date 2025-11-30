@@ -20,7 +20,7 @@ The goal is to share creative technology skills with artists and makers. If you'
 - **7X 2 Pin 2.54mm Pitch PCB Screw Terminal Block Connector**
 - **22awg 0.35mm² Solid Wire for connecting meters and switch**
 - **PCB**
-- **Printed Labels**
+- **Printed meter labels**
 
 ![Analog Station Front](/images/analog1.jpeg)
 ![Analog Station Back](/images/analog2.jpeg)
