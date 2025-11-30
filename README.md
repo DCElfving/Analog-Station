@@ -6,7 +6,7 @@ Intended as a hands-on workshop in a kit, The Analog Station merges the tactile 
 
 The goal is to share creative technology skills with artists and makers. If you're confident building on your own, order a PCB, source components, cut a faceplate and solder one up.  
 
-**Audio Mode**: Bass, mids, and treble each get their own meter—perfect for installations that respond to music, ambient noise, or voice.
+**Audio Mode**: Bass, mids, and treble each get their own meter.
 
 **Sensor Mode**: Temperature, humidity, and barometric pressure displayed on analog dials.
 
