@@ -1,5 +1,5 @@
 # Analog-Station
-Arduino code and files for building The Analog Station, an ESP32 based device for audio visualization and indoor climate monitoring. With a vintage glow!
+Arduino code and files for building The Analog Station, an ESP32 based device for audio visualization and indoor climate monitoring. With a wieless web interface and vintage glow!
 
 ## Overview
 Intended as a hands-on workshop in a kit, The Analog Station merges the tactile vibe of analog meters with modern sensor technologies and creative code.  
