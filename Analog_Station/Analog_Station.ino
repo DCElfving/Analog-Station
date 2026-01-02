@@ -1,19 +1,5 @@
-/* THE ANALOG STATION! - An ESP32-C3 based Audio & Environmental Monitor
- * Created in 2025 by Dave Elfving in San Francisco for teaching and learning.
- * 
- * A dual-mode monitoring station combining vintage analog aesthetics with modern digital processing.
- * 
- * MODES:
- * 1. AUDIO SPECTRUM ANALYZER
- *    - Real-time FFT analysis of audio frequencies (Low/Mid/High).
- * 
- * 2. ENVIRONMENTAL MONITOR (BME280)
- *    - Displays Temperature, Humidity, and Barometric Pressure.
- * 
- * CONTROLS:
- * - Toggle Switch: Switch between Audio and Sensor modes.
- * - Web Interface: Calibrate sensor readings and audio scaling via a built-in web server.
- */
+/* THE ANALOG STATION! - A fun audio & environmental monitor built with an ESP32-C3.
+Created in San Francisco for teaching and learning. 2025 */
 
 // Required libraries
 #include <Arduino.h>
@@ -56,6 +42,8 @@ bool lastToggleState = HIGH;
 // Forward declarations
 void setupWiFi();
 void handleRoot();
+void checkSerialCommands();
+void calibrateNoiseFloor();
 
 // FFT audio analysis
 float vReal[SAMPLES];
@@ -77,13 +65,13 @@ float nudgeHum = 0.0;
 bool calibrationValid = false;
 
 // Audio Calibration (Noise Floor & Scaling)
-float noiseFloorL = 800.0;
-float noiseFloorM = 800.0;
-float noiseFloorH = 800.0;
+float noiseFloorL = 500.0;
+float noiseFloorM = 500.0;
+float noiseFloorH = 500.0;
 
 // Audio Scaling Factors (adjustable via web interface)
 float scalingL = 45.0;
-float scalingM = 20.0;
+float scalingM = 15.0;
 float scalingH = 5.0;
 
 // Calibration adjustment mode variables (Sensor mode)
@@ -175,6 +163,67 @@ void loop() {
   delay(20);
 }
 
+// Handle serial commands
+void calibrateNoiseFloor() {
+  Serial.println("\n=== AUDIO NOISE CALIBRATION ===");
+  Serial.println("Please keep the room SILENT for 2 seconds...");
+  delay(1000);
+  
+  float maxL = 0, maxM = 0, maxH = 0;
+  unsigned long start = millis();
+  unsigned long sampling_period_us = round(1000000.0 * (1.0 / SAMPLE_RATE));
+  
+  while (millis() - start < 2000) {
+    // Sample
+    for (int i = 0; i < SAMPLES; i++) {
+      unsigned long newTime = micros();
+      vReal[i] = analogRead(MIC_PIN);
+      vImag[i] = 0;
+      while ((micros() - newTime) < sampling_period_us) { /* Wait */ }
+    }
+    
+    // FFT
+    FFT.dcRemoval();
+    FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+    FFT.compute(FFT_FORWARD);
+    FFT.complexToMagnitude();
+    
+    // Sum Bands
+    float l = 0, m = 0, h = 0;
+    int cL = 0, cM = 0, cH = 0;
+    
+    for (int i = 3; i <= 8; i++) { l += vReal[i]; cL++; }
+    for (int i = 9; i <= 25; i++) { m += vReal[i]; cM++; }
+    for (int i = 26; i < 64; i++) { h += vReal[i]; cH++; }
+    
+    // Normalize
+    if (cL > 0) l /= cL;
+    if (cM > 0) m /= cM;
+    if (cH > 0) h /= cH;
+    
+    if (l > maxL) maxL = l;
+    if (m > maxM) maxM = m;
+    if (h > maxH) maxH = h;
+  }
+  
+  // Add 5% buffer (reduced from 20% for better sensitivity)
+  noiseFloorL = maxL * 1.05;
+  noiseFloorM = maxM * 1.05;
+  noiseFloorH = maxH * 1.05;
+  
+  // Ensure minimums (Lowered for averaged values)
+  if (noiseFloorL < 100) noiseFloorL = 100;
+  if (noiseFloorM < 100) noiseFloorM = 100;
+  if (noiseFloorH < 100) noiseFloorH = 100;
+  
+  saveCalibration();
+  
+  Serial.printf("New Noise Floor: L=%.0f M=%.0f H=%.0f\n", noiseFloorL, noiseFloorM, noiseFloorH);
+  Serial.println("Calibration Complete. Returning to Audio Mode.");
+  sensorMode = false;
+}
+
+// 
 // Sensor mode - reads BME280 and drives meters (updates every 10 seconds)
 void processSensorMode() {
   static unsigned long lastSensorRead = 0;
@@ -334,7 +383,7 @@ void loadCalibration() {
   noiseFloorH = preferences.getFloat("noiseH", 500.0);
 
   scalingL = preferences.getFloat("scaleL", 45.0);
-  scalingM = preferences.getFloat("scaleM", 20.0);
+  scalingM = preferences.getFloat("scaleM", 15.0);
   scalingH = preferences.getFloat("scaleH", 5.0);
 
   if (calibrationValid) {
@@ -392,7 +441,7 @@ const char index_html[] PROGMEM = R"rawliteral(
   <title>Analog Station Config</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial; text-align: center; margin:0; padding:20px; background:#222; color:#eee; }
+    body { font-family: Arial; text-align: left; margin:0; padding:20px; background:#222; color:#eee; }
     h2 { color: #ffcc00; }
     .card { background: #333; padding: 20px; margin: 10px auto; max-width: 500px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
     .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 5px; background: #444; border-radius: 4px; }
@@ -400,8 +449,8 @@ const char index_html[] PROGMEM = R"rawliteral(
     .val { width: 80px; color: #ffcc00; font-family: monospace; }
     input[type=number] { width: 70px; padding: 5px; border: 1px solid #555; background: #222; color: #fff; border-radius: 4px; }
     button { cursor: pointer; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; }
-    .btn-cal { background: #007acc; color: white; }
-    .btn-nudge { background: #555; color: white; width: 30px; }
+    .btn-cal { background: #007acc; color: black; }
+    .btn-nudge { background: #555; color: black; width: 30px; }
     .btn-nudge:hover { background: #777; }
     .section-title { text-align: left; color: #aaa; border-bottom: 1px solid #555; margin-bottom: 10px; padding-bottom: 5px; }
   </style>
@@ -426,16 +475,48 @@ const char index_html[] PROGMEM = R"rawliteral(
           alert('Calibrated ' + id + ' to ' + val);
         });
     }
+    function calibrateNoise() {
+      if(!confirm('Silence the room for 2 seconds. Ready?')) return;
+      fetch('/calibrate_noise')
+        .then(res => res.text())
+        .then(msg => { 
+          alert(msg);
+        });
+    }
+    function switchMode(mode) {
+      fetch('/switch_mode?mode=' + mode)
+        .then(res => res.text())
+        .then(msg => { 
+          location.reload();
+        });
+    }
+    function restoreDefaults() {
+      if(!confirm('Restore default audio settings?')) return;
+      fetch('/restore_defaults')
+        .then(res => res.text())
+        .then(msg => { 
+          alert(msg);
+          location.reload();
+        });
+    }
   </script>
 </head>
 <body>
-  <h2>Analog Station</h2>
+  <h2>The Analog Station!</h2>
+  
+  <div class="card">
+    <div class="section-title">MODE SELECTION</div>
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button class="btn-cal" style="width:48%; padding:10px; background:%BTN_SENSOR_COLOR%;" onclick="switchMode('sensor')">SENSOR MODE</button>
+      <button class="btn-cal" style="width:48%; padding:10px; background:%BTN_AUDIO_COLOR%;" onclick="switchMode('audio')">AUDIO MODE</button>
+    </div>
+  </div>
   
   <div class="card">
     <div class="section-title">SENSOR CALIBRATION</div>
     <div style="font-size: 0.8em; color: #aaa; margin-bottom: 10px;">
-      <b>Ref:</b> Enter actual value to calibrate data.<br>
-      <b>Nudge:</b> Adjust meter needle only.
+      <b>Ref:</b> Enter a reference value to calibrate data.<br>
+      <b>Nudge:</b> Adjust the position of each meter needle.
     </div>
 
     <!-- Temperature -->
@@ -476,10 +557,18 @@ const char index_html[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
+    <div class="section-title">AUDIO CALIBRATION</div>
+    <div style="font-size: 0.8em; color: #aaa; margin-bottom: 10px;">
+      <b>Noise Floor:</b> Calibrate for silence.
+    </div>
+    <button class="btn-cal" style="width:100%; padding:10px; background:#ffcc00; color:black;" onclick="calibrateNoise()">Calibrate Noise Floor</button>
+  </div>
+
+  <div class="card">
     <div class="section-title">AUDIO SETTINGS</div>
     
     <div style="font-size: 0.8em; color: #aaa; margin-bottom: 5px; margin-top: 10px;">
-      <b>SCALING:</b> Higher = Less Sensitive
+      <b>SCALING:</b> Higher values are less sensitive
     </div>
     <form action="/save_audio" method="POST">
       <div class="row">
@@ -507,11 +596,12 @@ const char index_html[] PROGMEM = R"rawliteral(
         </div>
       </div>
 
-      <input type="submit" value="Save Audio Settings" style="width:100%; background:#ffcc00; border:none; padding:10px; margin-top:10px; cursor:pointer;">
+      <button type="button" style="width:100%; background:#555; color:black; border:none; padding:10px; margin-top:10px; cursor:pointer;" onclick="restoreDefaults()">Restore Default Audio Settings</button>
+      <input type="submit" value="Save Audio Settings" style="width:100%; background:#ffcc00; color:black; border:none; padding:10px; margin-top:10px; cursor:pointer;">
     </form>
   </div>
   
-  <p><a href="/" style="color:#aaa">Refresh Page</a></p>
+  <p style="text-align:center;"><a href="/" style="color:#aaa">Refresh Page</a></p>
 </body>
 </html>
 )rawliteral";
@@ -533,7 +623,37 @@ void handleRoot() {
   s.replace("%SCALEL%", String(scalingL));
   s.replace("%SCALEM%", String(scalingM));
   s.replace("%SCALEH%", String(scalingH));
+  
+  // Update button colors based on current mode
+  if (sensorMode) {
+    s.replace("%BTN_SENSOR_COLOR%", "#ffcc00; color:black");
+    s.replace("%BTN_AUDIO_COLOR%", "#555");
+  } else {
+    s.replace("%BTN_SENSOR_COLOR%", "#555");
+    s.replace("%BTN_AUDIO_COLOR%", "#ffcc00; color:black");
+  }
+  
   server.send(200, "text/html", s);
+}
+
+void handleSwitchMode() {
+  if (!server.hasArg("mode")) {
+    server.send(400, "text/plain", "Missing mode arg");
+    return;
+  }
+  
+  String mode = server.arg("mode");
+  if (mode == "sensor") {
+    sensorMode = true;
+    calibrationAdjustMode = false;
+    server.send(200, "text/plain", "Switched to Sensor Mode");
+  } else if (mode == "audio") {
+    sensorMode = false;
+    calibrationAdjustMode = false;
+    server.send(200, "text/plain", "Switched to Audio Mode");
+  } else {
+    server.send(400, "text/plain", "Invalid mode");
+  }
 }
 
 void handleNudge() {
@@ -602,6 +722,19 @@ void handleSaveAudio() {
   server.send(303);
 }
 
+void handleCalibrateNoise() {
+  calibrateNoiseFloor();
+  server.send(200, "text/plain", "Noise floor calibrated successfully!");
+}
+
+void handleRestoreDefaults() {
+  scalingL = 45.0;
+  scalingM = 15.0;
+  scalingH = 5.0;
+  saveCalibration();
+  server.send(200, "text/plain", "Audio settings restored to defaults.");
+}
+
 void setupWiFi() {
   WiFi.mode(WIFI_STA);
   
@@ -631,7 +764,10 @@ void setupWiFi() {
   
   server.on("/", handleRoot);
   server.on("/nudge", handleNudge);
+  server.on("/switch_mode", handleSwitchMode);
   server.on("/calibrate", handleCalibrate);
+  server.on("/calibrate_noise", handleCalibrateNoise);
+  server.on("/restore_defaults", handleRestoreDefaults);
   server.on("/save_audio", HTTP_POST, handleSaveAudio);
   server.begin();
   Serial.println("HTTP server started");

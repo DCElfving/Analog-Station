@@ -1,12 +1,12 @@
-# Analog Station - Workshop Guide
-Welcome to the Analog Station! Follow these steps to connect to your device and calibrate it.
+# Analog Station - Calibration Guide
+Welcome to the Analog Station! Follow these steps to connect to your device, calibrate the sensors, and tune the audio response.
 
 ## 1. Power Up & Identify
 1.  Connect your ESP32-C3 module to power (USB).
 2.  Wait a few seconds for the device to start.
 3.  Open your computer or phone's Wi-Fi settings.
 4.  Look for a network named **"Analog Station XXXX"** (where XXXX are 4 unique characters, e.g., "A1B2").
-    *   *Note: If you see multiple "Analog Station" networks, check the label on your device or ask an instructor.*
+    *   *Note: If you see multiple "Analog Station" networks, check the label that came with your device for its unique address.*
 
 ## 2. Connect
 1.  Select the network **"Analog Station XXXX"**.
@@ -18,28 +18,39 @@ Welcome to the Analog Station! Follow these steps to connect to your device and 
 2.  Type **`192.168.4.1`** into the address bar and press Enter.
 3.  You should see the **Analog Station Config** page.
 
-### Sensor Calibration (Sensor Mode)
-*   **Aligning the Needles:**
-    *   Look at the physical meters and the printed stickers.
-    *   Use the **[ + ]** and **[ - ]** buttons in the web interface to nudge the needle until it points to the correct value.
-    *   *Example:* If the room is 72°F, tap the buttons until the Temperature needle points to 72.
-    *   The settings will **auto-save** after 3 seconds.
+### Mode Selection
+At the top of the page, use the buttons to switch between modes:
+*   **SENSOR MODE**: Displays Temperature, Humidity, and Pressure on the meters.
+*   **AUDIO MODE**: Displays a real-time spectrum analyzer (Low, Mid, High frequencies).
 
-### Audio Tuning (Audio Mode)
+### Sensor Calibration
+This section allows you to calibrate the environmental sensors.
+*   **Ref (Reference Value):**
+    *   If you have a trusted reference thermometer or barometer, enter the *actual* value in the input box and click **Set**.
+    *   This calibrates the data reported by the station.
+*   **Nudge (+ / -):**
+    *   Use the **[ + ]** and **[ - ]** buttons to visually adjust the needle position.
+    *   This is useful if the data is correct but the mechanical meter needle is slightly misaligned.
+
+### Audio Calibration
+*   **Noise Floor Calibration:**
+    *   If the meters are bouncing or jittery when the room is quiet, click **"Calibrate Noise Floor"**.
+    *   You will be asked to keep the room silent for 2 seconds.
+    *   The device will measure the background noise and set a threshold to eliminate the jitter.
+
+### Audio Settings
 *   **Scaling Factors:**
-    *   These numbers control how sensitive the meters are to sound.
+    *   These numbers control how sensitive the meters are to sound in Audio Mode.
     *   **Lower number = More sensitive** (Meter moves more).
     *   **Higher number = Less sensitive** (Meter moves less).
-    *   *Typical values:* Low: `45`, Mid: `20`, High: `5`.
-    *   Play some music and adjust these values until the meters bounce nicely without hitting the maximum (pegging) too often.
+    *   *Default values:* Low: `45`, Mid: `15`, High: `5`.
+*   **Restore Defaults:**
+    *   Click **"Restore Default Audio Settings"** to reset the scaling factors to their defaults.
+*   **Save:**
+    *   Click **"Save Audio Settings"** to apply your custom scaling values.
 
-## 4. Save Changes
-1.  Click the **"Save Settings"** button.
-2.  The device will save your settings to its permanent memory and reload the page.
-
-## 5. Troubleshooting
-If you cannot connect via Wi-Fi, you can use the Serial Monitor:
-1.  Open the Arduino IDE or a Serial Terminal.
-2.  Select the correct COM port for your device.
-3.  She Serial Monitor will display your **Wi-Fi Name** and **IP Address** when the device starts.
-5.  It will also show the accurate sensor readings (unaffected by your needle adjustments) and IP address.
+## 4. Troubleshooting
+If you cannot connect via Wi-Fi:
+1.  Open the Arduino IDE or a Serial Terminal (Baud Rate: 115200).
+2.  Reset the device.
+3.  The Serial Monitor will display the **Wi-Fi Name** and **IP Address** during boot.
