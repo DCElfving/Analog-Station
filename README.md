@@ -1,12 +1,12 @@
 # Analog-Station
-Arduino code and files for building The Analog Station, an ESP32 based device for audio visualization and indoor climate monitoring. With a wieless web interface and vintage glow!
+Arduino code and files for building The Analog Station, an ESP32 based device for audio visualization and indoor climate monitoring. Complete with a wieless web interface and vintage glow!
 
 ## Overview
 Intended as a hands-on workshop in a kit, The Analog Station merges the tactile vibe of analog meters with modern sensor technologies and creative code.  
 
-The goal is to share creative technology skills with artists and makers. If you're confident building on your own, order a PCB, source components, cut a faceplate and solder one up.  
+The goal is to share creative technology skills with artists and makers. If you're confident building on your own, order a PCB with the included Gerber file, source components, laser cut a faceplate (glue it at a 15º angle to some plywood), and solder one up. Check out the <a href="https://docs.google.com/presentation/d/1KcfG4H2xHetNgzfBoPxqG8-ehrnyuGnOou0_SotSfiw/edit?usp=sharing">build instructions and workshop guide</a> on Google Slides.
 
-**Audio Mode**: Bass, mids, and treble each get their own meter—perfect for installations that respond to music, ambient noise, or voice.
+**Audio Mode**: Bass, mids, and treble each get their own meter. They respond to music, ambient noise, and voice.
 
 **Sensor Mode**: Temperature, humidity, and barometric pressure displayed on analog dials.
 
@@ -19,7 +19,7 @@ The goal is to share creative technology skills with artists and makers. If you'
 - **3x Warm White LEDs and resistors**
 - **7X 2 Pin 2.54mm Pitch PCB Screw Terminal Block Connector**
 - **22awg 0.35mm² Solid Wire for connecting meters and switch**
-- **PCB**
+- **PCB** (see Gerber file in this repository)
 
 ![Analog Station Front](/images/analog1.jpeg)
 ![Analog Station Back](/images/analog2.jpeg)
