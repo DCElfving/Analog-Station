@@ -19,7 +19,7 @@ The goal is to share creative technology skills with artists and makers. If you'
 - **3x Warm White LEDs and resistors**
 - **7X 2 Pin 2.54mm Pitch PCB Screw Terminal Block Connector**
 - **22awg 0.35mm² Solid Wire for connecting meters and switch**
-- **PCB** (see Gerber file in this repository)
+- **PCB** (see Gerber and Fritzing files in this repository)
 
 ![Analog Station Front](/images/analog1.jpeg)
 ![Analog Station Back](/images/analog2.jpeg)
