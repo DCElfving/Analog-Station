@@ -206,10 +206,10 @@ void calibrateNoiseFloor() {
     if (h > maxH) maxH = h;
   }
   
-  // Add 5% buffer (reduced from 20% for better sensitivity)
-  noiseFloorL = maxL * 1.05;
-  noiseFloorM = maxM * 1.05;
-  noiseFloorH = maxH * 1.05;
+  // Set noise floor to max measured value (no buffer)
+  noiseFloorL = maxL;
+  noiseFloorM = maxM;
+  noiseFloorH = maxH;
   
   // Ensure minimums (Lowered for averaged values)
   if (noiseFloorL < 100) noiseFloorL = 100;
