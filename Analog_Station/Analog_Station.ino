@@ -1,4 +1,4 @@
-/* THE ANALOG STATION! - A fun audio & environmental monitor built with an ESP32-C3.
+/* THE ANALOG STATION! - An audio & environmental monitor built with an ESP32-C3.
 Created in San Francisco for teaching and learning. 2025 */
 
 // Required libraries
@@ -42,7 +42,6 @@ bool lastToggleState = HIGH;
 // Forward declarations
 void setupWiFi();
 void handleRoot();
-void checkSerialCommands();
 void calibrateNoiseFloor();
 
 // FFT audio analysis
@@ -64,15 +63,20 @@ float nudgePress = 0.0;
 float nudgeHum = 0.0;
 bool calibrationValid = false;
 
-// Audio Calibration (Noise Floor & Scaling)
+// Audio Calibration (Noise Floor & Gain)
 float noiseFloorL = 500.0;
 float noiseFloorM = 500.0;
 float noiseFloorH = 500.0;
 
-// Audio Scaling Factors (adjustable via web interface)
-float scalingL = 45.0;
-float scalingM = 15.0;
-float scalingH = 5.0;
+// Audio Sensitivity (1-100) - controls Gain
+int sensL = 17;
+int sensM = 23;
+int sensH = 49;
+
+// Audio Band Config (BINS)
+// Bins are roughly 31.25Hz apart (4000Hz / 128)
+int bandSplitLowMid = 11;
+int bandSplitMidHigh = 49;
 
 // Calibration adjustment mode variables (Sensor mode)
 bool calibrationAdjustMode = false;
@@ -82,14 +86,15 @@ unsigned long lastAdjustmentTime = 0;
 bool calibrationChanged = false;
 #define AUTO_SAVE_DELAY 3000 
 
+unsigned long lastSensorRead = 0; // Global for instant switching
+
 // Setup - runs once at startup
 void setup() {
   Serial.begin(115200);
   
-  // Wait for serial to connect (needed for native USB boards like C3)
+  // Wait shortly for serial, but don't block long if not connected
   unsigned long start = millis();
-  while (!Serial && millis() - start < 3000);
-  delay(1000);
+  while (!Serial && millis() - start < 500); 
 
   Serial.println("\n\n--- Analog Station Booting ---");
 
@@ -125,17 +130,13 @@ void setup() {
   digitalWrite(LED_HIGH, HIGH);
 
   // Load saved settings from non-volatile storage
-  preferences.begin("analog-station", false);
   loadCalibration();
-  preferences.end(); 
   
   // Initialize WiFi and Web Server
   setupWiFi();
 
   Serial.println("ESP32-C3 Controller Ready");
   Serial.printf("Connect to WiFi: '%s' (IP: %s)\n", ssid, WiFi.softAPIP().toString().c_str());
-  
-  delay(2000);
 }
 
 // Main loop - runs continuously
@@ -147,7 +148,6 @@ void loop() {
   if (currentToggleState != lastToggleState) {
     sensorMode = (currentToggleState == LOW);
     lastToggleState = currentToggleState;
-    Serial.printf("Mode: %s (via toggle switch)\n", sensorMode ? "Sensor" : "Audio");
   }
   
   // Process audio or sensor mode
@@ -157,16 +157,13 @@ void loop() {
   if (calibrationChanged && (millis() - lastAdjustmentTime > AUTO_SAVE_DELAY)) {
     saveCalibration();
     calibrationChanged = false;
-    Serial.println("(Auto-saved changes)");
   }
   
   delay(20);
 }
 
-// Handle serial commands
+// Handle calibration
 void calibrateNoiseFloor() {
-  Serial.println("\n=== AUDIO NOISE CALIBRATION ===");
-  Serial.println("Please keep the room SILENT for 2 seconds...");
   delay(1000);
   
   float maxL = 0, maxM = 0, maxH = 0;
@@ -192,9 +189,9 @@ void calibrateNoiseFloor() {
     float l = 0, m = 0, h = 0;
     int cL = 0, cM = 0, cH = 0;
     
-    for (int i = 3; i <= 8; i++) { l += vReal[i]; cL++; }
-    for (int i = 9; i <= 25; i++) { m += vReal[i]; cM++; }
-    for (int i = 26; i < 64; i++) { h += vReal[i]; cH++; }
+    for (int i = 3; i <= bandSplitLowMid; i++) { l += vReal[i]; cL++; }
+    for (int i = bandSplitLowMid + 1; i <= bandSplitMidHigh; i++) { m += vReal[i]; cM++; }
+    for (int i = bandSplitMidHigh + 1; i < 64; i++) { h += vReal[i]; cH++; }
     
     // Normalize
     if (cL > 0) l /= cL;
@@ -218,19 +215,16 @@ void calibrateNoiseFloor() {
   
   saveCalibration();
   
-  Serial.printf("New Noise Floor: L=%.0f M=%.0f H=%.0f\n", noiseFloorL, noiseFloorM, noiseFloorH);
-  Serial.println("Calibration Complete. Returning to Audio Mode.");
   sensorMode = false;
 }
 
 // 
 // Sensor mode - reads BME280 and drives meters (updates every 10 seconds)
 void processSensorMode() {
-  static unsigned long lastSensorRead = 0;
   unsigned long currentTime = millis();
   
-  // Rate limit to 10 seconds (or 0.5 seconds in adjustment mode for live feedback)
-  unsigned long readInterval = calibrationAdjustMode ? 500 : 10000;
+  // Rate limit to 3 seconds (or 0.5 seconds in adjustment mode for live feedback)
+  unsigned long readInterval = calibrationAdjustMode ? 500 : 3000;
   if (currentTime - lastSensorRead < readInterval) {
     return;
   }
@@ -243,7 +237,6 @@ void processSensorMode() {
   
   // Validate readings
   if (isnan(tempC) || isnan(pressureHPa) || isnan(humidity)) {
-    Serial.println("BME280 read failed - check wiring");
     return;
   }
 
@@ -275,12 +268,6 @@ void processSensorMode() {
   ledcWrite(METER_MID, pwmHum);
   ledcWrite(METER_HIGH, pwmPress);
   ledcWrite(BUILTIN_LED_C3, 127);
-
-  // Display readings (Data Calibrated, NOT Nudged)
-  if (!calibrationAdjustMode) {
-    Serial.printf("T: %.1f°F (PWM %d) | H: %.1f%% (PWM %d) | P: %.1fhPa (PWM %d)\n",
-                  finalTemp, pwmTemp, finalHum, pwmHum, finalPress, pwmPress);
-  }
 }
 
 // Audio mode - Simplified FFT-based spectrum analysis
@@ -302,42 +289,42 @@ void processAudioMode() {
   FFT.compute(FFT_FORWARD);
   FFT.complexToMagnitude();
 
-  // 3. Calculate Band Levels (Average of magnitudes)
-  // Sample Rate: 4000Hz, Samples: 128 -> Bin size: ~31.25Hz
+  // 3. Calculate Band Levels (Max Peak Detection)
   // Max Frequency: 2000Hz (Nyquist)
   float levelLow = 0, levelMid = 0, levelHigh = 0;
-  int countLow = 0, countMid = 0, countHigh = 0;
 
-  // Low: ~90Hz - 250Hz (Bins 3-8)
-  for (int i = 3; i <= 8; i++) {
-    levelLow += vReal[i];
-    countLow++;
+  // Low Band
+  for (int i = 3; i <= bandSplitLowMid; i++) {
+    if (vReal[i] > levelLow) levelLow = vReal[i];
   }
   
-  // Mid: ~250Hz - 800Hz (Bins 9-25)
-  for (int i = 9; i <= 25; i++) {
-    levelMid += vReal[i];
-    countMid++;
+  // Mid Band
+  for (int i = bandSplitLowMid + 1; i <= bandSplitMidHigh; i++) {
+     if (vReal[i] > levelMid) levelMid = vReal[i];
   }
 
-  // High: ~800Hz - 2000Hz (Bins 26-63)
-  for (int i = 26; i < 64; i++) {
-    levelHigh += vReal[i];
-    countHigh++;
+  // High Band
+  for (int i = bandSplitMidHigh + 1; i < 64; i++) {
+     if (vReal[i] > levelHigh) levelHigh = vReal[i];
   }
   
-  // Normalize (Average) to prevent wider bands from dominating
-  if (countLow > 0) levelLow /= countLow;
-  if (countMid > 0) levelMid /= countMid;
-  if (countHigh > 0) levelHigh /= countHigh;
-
   // 5. Compute Meter PWM (0-255) with Smoothing
   static float smoothLow = 0, smoothMid = 0, smoothHigh = 0;
+  
+  // Calculate Gain from Sensitivity (0.0001 to ~0.5)
+  // Square curve gives better low-volume control
+  // sens=50 -> 2500 * 0.00005 = 0.125
+  // sens=100 -> 10000 * 0.00005 = 0.5
+  const float GAIN_FACTOR = 0.00005; 
+  float gainL = (sensL * sensL) * GAIN_FACTOR;
+  float gainM = (sensM * sensM) * GAIN_FACTOR;
+  float gainH = (sensH * sensH) * GAIN_FACTOR;
+
   const float SMOOTHING_L = 0.85; // Higher = Slower/Smoother for Bass
   const float SMOOTHING_MH = 0.7; // Standard for Mid/High
 
   // Helper lambda for processing
-  auto processBand = [](float level, float floor, float scale, float &smoothed, float smoothFactor) -> int {
+  auto processBand = [](float level, float floor, float gain, float &smoothed, float smoothFactor) -> int {
     // Hard Noise Gate
     if (level < floor) {
       level = 0;
@@ -348,14 +335,14 @@ void processAudioMode() {
     // Smoothing
     smoothed = (smoothed * smoothFactor) + (level * (1.0 - smoothFactor));
     
-    // Scaling
-    int output = (int)(smoothed / scale);
+    // Gain
+    int output = (int)(smoothed * gain);
     return constrain(output, 0, 255);
   };
 
-  int pwmL = processBand(levelLow, noiseFloorL, scalingL, smoothLow, SMOOTHING_L);
-  int pwmM = processBand(levelMid, noiseFloorM, scalingM, smoothMid, SMOOTHING_MH);
-  int pwmH = processBand(levelHigh, noiseFloorH, scalingH, smoothHigh, SMOOTHING_MH);
+  int pwmL = processBand(levelLow, noiseFloorL, gainL, smoothLow, SMOOTHING_L);
+  int pwmM = processBand(levelMid, noiseFloorM, gainM, smoothMid, SMOOTHING_MH);
+  int pwmH = processBand(levelHigh, noiseFloorH, gainH, smoothHigh, SMOOTHING_MH);
 
   // 6. Output to Meters
   ledcWrite(METER_LOW, pwmL);
@@ -364,27 +351,23 @@ void processAudioMode() {
   
   // Brightness of built-in LED tied to mid level
   ledcWrite(BUILTIN_LED_C3, 255 - pwmM);
-
-  // Debug Output (Visible in Serial Monitor)
-  static int skip = 0;
-  if (skip++ > 10) { // Slow down prints
-    skip = 0;
-    Serial.printf("RAW: L=%.0f M=%.0f H=%.0f  ->  PWM: %d %d %d\n", 
-      levelLow, levelMid, levelHigh, pwmL, pwmM, pwmH);
-  }
 }
 
 // Sensor calibration functions
 void loadCalibration() {
+  preferences.begin("analog_stn", true);
   calibrationValid = preferences.getBool("calValid", false);
   
   noiseFloorL = preferences.getFloat("noiseL", 500.0);
   noiseFloorM = preferences.getFloat("noiseM", 500.0);
   noiseFloorH = preferences.getFloat("noiseH", 500.0);
 
-  scalingL = preferences.getFloat("scaleL", 45.0);
-  scalingM = preferences.getFloat("scaleM", 15.0);
-  scalingH = preferences.getFloat("scaleH", 5.0);
+  sensL = preferences.getInt("sensL", 17);
+  sensM = preferences.getInt("sensM", 23);
+  sensH = preferences.getInt("sensH", 49);
+
+  bandSplitLowMid = preferences.getInt("split1", 11);
+  bandSplitMidHigh = preferences.getInt("split2", 49);
 
   if (calibrationValid) {
     // Load Data Offsets
@@ -403,11 +386,12 @@ void loadCalibration() {
     Serial.println("\nNo sensor calibration data found.");
   }
   Serial.printf("Loaded Noise Floor: L=%.0f M=%.0f H=%.0f\n", noiseFloorL, noiseFloorM, noiseFloorH);
-  Serial.printf("Loaded Scaling: L=%.1f M=%.1f H=%.1f\n", scalingL, scalingM, scalingH);
+  Serial.printf("Loaded Sensitivity: L=%d M=%d H=%d\n", sensL, sensM, sensH);
+  preferences.end();
 }
 
 void saveCalibration() {
-  preferences.begin("analog-station", false);
+  preferences.begin("analog_stn", false);
   
   preferences.putFloat("calTemp", calTemp);
   preferences.putFloat("calPress", calPress);
@@ -417,9 +401,12 @@ void saveCalibration() {
   preferences.putFloat("nudgePress", nudgePress);
   preferences.putFloat("nudgeHum", nudgeHum);
   
-  preferences.putFloat("scaleL", scalingL);
-  preferences.putFloat("scaleM", scalingM);
-  preferences.putFloat("scaleH", scalingH);
+  preferences.putInt("sensL", sensL);
+  preferences.putInt("sensM", sensM);
+  preferences.putInt("sensH", sensH);
+
+  preferences.putInt("split1", bandSplitLowMid);
+  preferences.putInt("split2", bandSplitMidHigh);
 
   preferences.putFloat("noiseL", noiseFloorL);
   preferences.putFloat("noiseM", noiseFloorM);
@@ -428,7 +415,6 @@ void saveCalibration() {
   preferences.putBool("calValid", true);
   preferences.end();
   calibrationValid = true;
-  Serial.println("Calibration saved.");
 }
 
 // ==========================================
@@ -438,21 +424,49 @@ void saveCalibration() {
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
 <head>
-  <title>Analog Station Config</title>
+  <title>Analog Station</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial; text-align: left; margin:0; padding:20px; background:#222; color:#eee; }
-    h2 { color: #ffcc00; }
-    .card { background: #333; padding: 20px; margin: 10px auto; max-width: 500px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
-    .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 5px; background: #444; border-radius: 4px; }
-    .label { width: 60px; font-weight: bold; text-align: left; }
-    .val { width: 80px; color: #ffcc00; font-family: monospace; }
-    input[type=number] { width: 70px; padding: 5px; border: 1px solid #555; background: #222; color: #fff; border-radius: 4px; }
-    button { cursor: pointer; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; }
-    .btn-cal { background: #007acc; color: black; }
-    .btn-nudge { background: #555; color: black; width: 30px; }
-    .btn-nudge:hover { background: #777; }
-    .section-title { text-align: left; color: #aaa; border-bottom: 1px solid #555; margin-bottom: 10px; padding-bottom: 5px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: left; margin:0; padding:20px; background:#121212; color:#e0e0e0; }
+    h2 { color: #ffc107; letter-spacing: 1px; margin-bottom: 20px; font-weight: 300; text-align: center; }
+    
+    /* Card Design */
+    .card { background: #1e1e1e; padding: 25px; margin: 20px auto; max-width: 420px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid #333; }
+    
+    /* Section Headers */
+    .section-title { text-align: left; color: #ffc107; text-transform: uppercase; font-size: 0.85em; letter-spacing: 1.5px; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 8px; font-weight: 600; }
+    
+    /* Rows & Inputs */
+    .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 10px; background: #2c2c2c; border-radius: 8px; } /* Medium Grey */
+    .val { width: 80px; color: #ffc107; font-family: monospace; font-size: 1.2em; text-align: right; margin-right: 15px; }
+    
+    input[type=number] { width: 90px; padding: 10px; border: 1px solid #444; background: #252525; color: #fff; border-radius: 6px; font-size: 1em; outline: none; transition: border-color 0.2s; }
+    input[type=number]:focus { border-color: #ffc107; }
+
+    input[type=text] { width: 90px; padding: 10px; border: 1px solid #444; background: #252525; color: #fff; border-radius: 6px; font-size: 1em; outline: none; transition: border-color 0.2s; }
+    input[type=text]:focus { border-color: #ffc107; }
+    
+    input[type=range] { width: 100%; margin-top: 10px; accent-color: #ffc107; height: 6px; border-radius: 3px; background: #444; }
+    
+    /* Buttons */
+    button { cursor: pointer; border: none; border-radius: 6px; padding: 12px 15px; font-weight: 600; font-size: 0.9em; transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    .btn-mode { width:48%; background: #333; color: #aaa; }
+    .btn-mode.active { background: #ffc107; color: #121212; }
+    
+    .btn-cal { background: #ffc107; color: #121212; padding: 10px 15px; }
+    .btn-cal:hover { background: #e0a800; transform: translateY(-1px); }
+    
+    .btn-nudge { background: #333; color: #ccc; width: 48%; padding: 10px; font-size: 0.85em; border: 1px solid #444; }
+    .btn-nudge:hover { background: #444; color: #fff; border-color: #555; }
+    
+    .btn-ghost { background: transparent; color: #777; font-size: 0.8em; margin-top:15px; width:100%; text-decoration: underline; }
+    .btn-ghost:hover { color: #aaa; }
+
+    /* Sliders Container */
+    .slider-container { text-align: left; margin-bottom: 20px; padding: 15px; background: #252525; border-radius: 8px; border: 1px solid #333; }
+    .slider-label { display: flex; justify-content: space-between; font-size: 0.9em; color: #ddd; margin-bottom: 5px; font-weight: 500; }
+    .sub-text { font-size: 0.75em; color: #888; margin-top: 10px; margin-bottom: 10px; line-height: 1.4; }
   </style>
   <script>
     function nudge(id, dir) {
@@ -460,9 +474,6 @@ const char index_html[] PROGMEM = R"rawliteral(
         .then(res => res.text())
         .then(val => { 
           console.log('Nudged', id, val);
-          if(id.startsWith('scale') || id.startsWith('noise')) {
-             document.getElementById(id).value = val;
-          }
         });
     }
     function calibrate(id) {
@@ -476,28 +487,39 @@ const char index_html[] PROGMEM = R"rawliteral(
         });
     }
     function calibrateNoise() {
-      if(!confirm('Silence the room for 2 seconds. Ready?')) return;
+      document.getElementById('btn_noise').innerText = "Calibrating...";
       fetch('/calibrate_noise')
         .then(res => res.text())
         .then(msg => { 
           alert(msg);
+          document.getElementById('btn_noise').innerText = "Calibrate Noise Floor";
         });
+    }
+    function setAudio(id, val) {
+        // Update display immediately
+        document.getElementById('disp_' + id).innerText = val;
+        // Debounce or just send? Sending on change (release) is fine. 
+        // For 'input' event (dragging), we might flood. 
+        // Using 'onchange' triggers on release. 'oninput' triggers on drag.
+        // Let's use fetch on change.
+        fetch('/set_audio?id=' + id + '&val=' + val);
     }
     function switchMode(mode) {
       fetch('/switch_mode?mode=' + mode)
         .then(res => res.text())
-        .then(msg => { 
-          location.reload();
-        });
+        .then(msg => location.reload());
     }
     function restoreDefaults() {
       if(!confirm('Restore default audio settings?')) return;
       fetch('/restore_defaults')
         .then(res => res.text())
-        .then(msg => { 
-          alert(msg);
-          location.reload();
-        });
+        .then(msg => { alert(msg); location.reload(); });
+    }
+    function restoreSensorDefaults() {
+      if(!confirm('Restore default sensor calibration (raw values)?')) return;
+      fetch('/restore_sensor_defaults')
+        .then(res => res.text())
+        .then(msg => { alert(msg); location.reload(); });
     }
   </script>
 </head>
@@ -505,103 +527,97 @@ const char index_html[] PROGMEM = R"rawliteral(
   <h2>The Analog Station!</h2>
   
   <div class="card">
-    <div class="section-title">MODE SELECTION</div>
-    <div style="display:flex; gap:10px; justify-content:center;">
-      <button class="btn-cal" style="width:48%; padding:10px; background:%BTN_SENSOR_COLOR%;" onclick="switchMode('sensor')">SENSOR MODE</button>
-      <button class="btn-cal" style="width:48%; padding:10px; background:%BTN_AUDIO_COLOR%;" onclick="switchMode('audio')">AUDIO MODE</button>
+    <div style="display:flex; gap:10px; justify-content:flex-start;">
+      <button class="btn-mode %BTN_SENSOR_ACTIVE%" onclick="switchMode('sensor')">Sensor</button>
+      <button class="btn-mode %BTN_AUDIO_ACTIVE%" onclick="switchMode('audio')">Audio</button>
     </div>
   </div>
   
   <div class="card">
-    <div class="section-title">SENSOR CALIBRATION</div>
-    <div style="font-size: 0.8em; color: #aaa; margin-bottom: 10px;">
-      <b>Ref:</b> Enter a reference value to calibrate data.<br>
-      <b>Nudge:</b> Adjust the position of each meter needle.
+    <div class="section-title">Sensor Calibration</div>
+    <div class="sub-text">Set reference values to match your sensor an outside source. You can also nudge the needle for each meter to ensure accurate display.</div>
+    <div style="background:#252525; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #333;">
+        <div class="row" style="margin-bottom:10px; padding:0; background:none;">
+          <div style="flex:1;">
+            <div style="font-size:1.1em; text-align:left; color:#ccc; font-weight:500;">Temp</div>
+            <div class="val" id="cur_temp" style="text-align:left; color:#ffc107;">%TEMP% F</div>
+          </div>
+          <input type="text" id="ref_temp" placeholder="Ref Temp">
+          <button class="btn-cal" style="margin-left:10px;" onclick="calibrate('temp')">SET</button>
+        </div>
+        <div style="border-top:1px solid #333; margin:10px 0;"></div>
+        <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
+          <button class="btn-nudge" onclick="nudge('temp', -1)">- Nudge</button>
+          <button class="btn-nudge" onclick="nudge('temp', 1)">+ Nudge</button>
+        </div>
     </div>
 
-    <!-- Temperature -->
-    <div class="row">
-      <span class="label">Temp</span>
-      <span class="val" id="cur_temp">%TEMP% F</span>
-      <input type="number" id="ref_temp" placeholder="Ref F" step="0.1">
-      <button class="btn-cal" onclick="calibrate('temp')">Set</button>
-      <div style="display:flex; flex-direction:column; gap:2px;">
-        <button class="btn-nudge" onclick="nudge('temp', 1)">+</button>
-        <button class="btn-nudge" onclick="nudge('temp', -1)">-</button>
-      </div>
+    <div style="background:#252525; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #333;">
+        <div class="row" style="margin-bottom:10px; padding:0; background:none;">
+          <div style="flex:1;">
+            <div style="font-size:1.1em; text-align:left; color:#ccc; font-weight:500;">Humidity</div>
+            <div class="val" id="cur_hum" style="text-align:left; color:#ffc107;">%HUM% %</div>
+          </div>
+          <input type="text" id="ref_hum" placeholder="Ref Hum">
+          <button class="btn-cal" style="margin-left:10px;" onclick="calibrate('hum')">SET</button>
+        </div>
+        <div style="border-top:1px solid #333; margin:10px 0;"></div>
+        <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
+          <button class="btn-nudge" onclick="nudge('hum', -1)">- Nudge</button>
+          <button class="btn-nudge" onclick="nudge('hum', 1)">+ Nudge</button>
+        </div>
     </div>
 
-    <!-- Pressure -->
-    <div class="row">
-      <span class="label">Press</span>
-      <span class="val" id="cur_press">%PRESS% hPa</span>
-      <input type="number" id="ref_press" placeholder="Ref hPa" step="0.1">
-      <button class="btn-cal" onclick="calibrate('press')">Set</button>
-      <div style="display:flex; flex-direction:column; gap:2px;">
-        <button class="btn-nudge" onclick="nudge('press', 1)">+</button>
-        <button class="btn-nudge" onclick="nudge('press', -1)">-</button>
-      </div>
+    <div style="background:#252525; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #333;">
+        <div class="row" style="margin-bottom:10px; padding:0; background:none;">
+          <div style="flex:1;">
+            <div style="font-size:1.1em; text-align:left; color:#ccc; font-weight:500;">Pressure</div>
+            <div class="val" id="cur_press" style="text-align:left; color:#ffc107;">%PRESS% hPa</div>
+          </div>
+          <input type="text" id="ref_press" placeholder="Ref hPa">
+          <button class="btn-cal" style="margin-left:10px;" onclick="calibrate('press')">SET</button>
+        </div>
+        <div style="border-top:1px solid #333; margin:10px 0;"></div>
+        <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
+          <button class="btn-nudge" onclick="nudge('press', -1)">- Nudge</button>
+          <button class="btn-nudge" onclick="nudge('press', 1)">+ Nudge</button>
+        </div>
     </div>
-
-    <!-- Humidity -->
-    <div class="row">
-      <span class="label">Hum</span>
-      <span class="val" id="cur_hum">%HUM% %</span>
-      <input type="number" id="ref_hum" placeholder="Ref %" step="0.1">
-      <button class="btn-cal" onclick="calibrate('hum')">Set</button>
-      <div style="display:flex; flex-direction:column; gap:2px;">
-        <button class="btn-nudge" onclick="nudge('hum', 1)">+</button>
-        <button class="btn-nudge" onclick="nudge('hum', -1)">-</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="section-title">AUDIO CALIBRATION</div>
-    <div style="font-size: 0.8em; color: #aaa; margin-bottom: 10px;">
-      <b>Noise Floor:</b> Calibrate for silence.
-    </div>
-    <button class="btn-cal" style="width:100%; padding:10px; background:#ffcc00; color:black;" onclick="calibrateNoise()">Calibrate Noise Floor</button>
-  </div>
-
-  <div class="card">
-    <div class="section-title">AUDIO SETTINGS</div>
     
-    <div style="font-size: 0.8em; color: #aaa; margin-bottom: 5px; margin-top: 10px;">
-      <b>SCALING:</b> Higher values are less sensitive
-    </div>
-    <form action="/save_audio" method="POST">
-      <div class="row">
-        <span class="label">Low</span>
-        <input type="number" step="0.1" name="scaleL" id="scaleL" value="%SCALEL%">
-        <div style="display:flex; flex-direction:column; gap:2px;">
-          <button type="button" class="btn-nudge" onclick="nudge('scaleL', 1)">+</button>
-          <button type="button" class="btn-nudge" onclick="nudge('scaleL', -1)">-</button>
-        </div>
-      </div>
-      <div class="row">
-        <span class="label">Mid</span>
-        <input type="number" step="0.1" name="scaleM" id="scaleM" value="%SCALEM%">
-        <div style="display:flex; flex-direction:column; gap:2px;">
-          <button type="button" class="btn-nudge" onclick="nudge('scaleM', 1)">+</button>
-          <button type="button" class="btn-nudge" onclick="nudge('scaleM', -1)">-</button>
-        </div>
-      </div>
-      <div class="row">
-        <span class="label">High</span>
-        <input type="number" step="0.1" name="scaleH" id="scaleH" value="%SCALEH%">
-        <div style="display:flex; flex-direction:column; gap:2px;">
-          <button type="button" class="btn-nudge" onclick="nudge('scaleH', 1)">+</button>
-          <button type="button" class="btn-nudge" onclick="nudge('scaleH', -1)">-</button>
-        </div>
-      </div>
+    <button class="btn-ghost" onclick="restoreSensorDefaults()">Restore Raw Sensor Values</button>
+  </div>
 
-      <button type="button" style="width:100%; background:#555; color:black; border:none; padding:10px; margin-top:10px; cursor:pointer;" onclick="restoreDefaults()">Restore Default Audio Settings</button>
-      <input type="submit" value="Save Audio Settings" style="width:100%; background:#ffcc00; color:black; border:none; padding:10px; margin-top:10px; cursor:pointer;">
-    </form>
+  <div class="card">
+    <div class="section-title">Audio Sensitivity</div>
+    <div class="sub-text">Adjust the sensitivity of your meters. The defaults work well for ambient music.</div>
+    <div class="slider-container">
+      <div class="slider-label"><span>Low</span> <span id="disp_sensL">%SENSL%</span></div>
+      <div class="sub-text">90Hz - 340Hz</div>
+      <input type="range" min="1" max="100" value="%SENSL%" onchange="setAudio('sensL', this.value)" oninput="document.getElementById('disp_sensL').innerText=this.value">
+    </div>
+
+    <div class="slider-container">
+      <div class="slider-label"><span>Medium</span> <span id="disp_sensM">%SENSM%</span></div>
+      <div class="sub-text">375Hz - 1.5kHz</div>
+      <input type="range" min="1" max="100" value="%SENSM%" onchange="setAudio('sensM', this.value)" oninput="document.getElementById('disp_sensM').innerText=this.value">
+    </div>
+
+    <div class="slider-container">
+      <div class="slider-label"><span>High</span> <span id="disp_sensH">%SENSH%</span></div>
+      <div class="sub-text">1.5kHz - 2kHz</div>
+      <input type="range" min="1" max="100" value="%SENSH%" onchange="setAudio('sensH', this.value)" oninput="document.getElementById('disp_sensH').innerText=this.value">
+    </div>
+    
+    <button class="btn-ghost" onclick="restoreDefaults()">Restore Default Settings</button>
   </div>
   
-  <p style="text-align:center;"><a href="/" style="color:#aaa">Refresh Page</a></p>
+  <div class="card">
+    <div class="section-title">Calibration</div>
+    <div class="sub-text">If your meters seem to bounce during silence, this can help. Ensure the room is completely silent, then tap below to set the noise floor.</div>
+    <div style="color:#aaa; font-size:0.9em; margin-bottom:15px; line-height:1.4;">
+    </div>
+    <button id="btn_noise" style="width:100%; background:#333; color:#ffc107; border:1px solid #ffc107; padding:15px;" onclick="calibrateNoise()">CALIBRATE NOISE FLOOR</button>
+  </div>
 </body>
 </html>
 )rawliteral";
@@ -620,17 +636,18 @@ void handleRoot() {
   s.replace("%TEMP%", String(curTemp, 1));
   s.replace("%PRESS%", String(curPress, 1));
   s.replace("%HUM%", String(curHum, 1));
-  s.replace("%SCALEL%", String(scalingL));
-  s.replace("%SCALEM%", String(scalingM));
-  s.replace("%SCALEH%", String(scalingH));
+  
+  s.replace("%SENSL%", String(sensL));
+  s.replace("%SENSM%", String(sensM));
+  s.replace("%SENSH%", String(sensH));
   
   // Update button colors based on current mode
   if (sensorMode) {
-    s.replace("%BTN_SENSOR_COLOR%", "#ffcc00; color:black");
-    s.replace("%BTN_AUDIO_COLOR%", "#555");
+    s.replace("%BTN_SENSOR_ACTIVE%", "active");
+    s.replace("%BTN_AUDIO_ACTIVE%", "");
   } else {
-    s.replace("%BTN_SENSOR_COLOR%", "#555");
-    s.replace("%BTN_AUDIO_COLOR%", "#ffcc00; color:black");
+    s.replace("%BTN_SENSOR_ACTIVE%", "");
+    s.replace("%BTN_AUDIO_ACTIVE%", "active");
   }
   
   server.send(200, "text/html", s);
@@ -646,6 +663,7 @@ void handleSwitchMode() {
   if (mode == "sensor") {
     sensorMode = true;
     calibrationAdjustMode = false;
+    lastSensorRead = 0; // Force immediate update
     server.send(200, "text/plain", "Switched to Sensor Mode");
   } else if (mode == "audio") {
     sensorMode = false;
@@ -670,11 +688,6 @@ void handleNudge() {
   else if (id == "press") nudgePress += (dir * 0.5);
   else if (id == "hum") nudgeHum += (dir * 0.5);
   
-  // Audio Scaling Nudges
-  else if (id == "scaleL") { scalingL += (dir * 1.0); newVal = scalingL; }
-  else if (id == "scaleM") { scalingM += (dir * 1.0); newVal = scalingM; }
-  else if (id == "scaleH") { scalingH += (dir * 0.5); newVal = scalingH; }
-
   calibrationAdjustMode = true;
   calibrationChanged = true;
   lastAdjustmentTime = millis();
@@ -712,14 +725,32 @@ void handleCalibrate() {
   server.send(200, "text/plain", String(newVal, 1));
 }
 
-void handleSaveAudio() {
-  if (server.hasArg("scaleL")) scalingL = server.arg("scaleL").toFloat();
-  if (server.hasArg("scaleM")) scalingM = server.arg("scaleM").toFloat();
-  if (server.hasArg("scaleH")) scalingH = server.arg("scaleH").toFloat();
+void handleSetAudio() {
+  if (!server.hasArg("id") || !server.hasArg("val")) {
+    server.send(400, "text/plain", "Missing args");
+    return;
+  }
   
-  saveCalibration();
-  server.sendHeader("Location", "/");
-  server.send(303);
+  String id = server.arg("id");
+  int val = server.arg("val").toInt();
+  
+  // Set Sensitivity Directly (1-100)
+  if (id == "sensL") sensL = val;
+  else if (id == "sensM") sensM = val;
+  else if (id == "sensH") sensH = val;
+  
+  // Set Frequency Splits
+  else if (id == "split1") {
+    bandSplitLowMid = constrain(val, 3, bandSplitMidHigh - 1);
+  }
+  else if (id == "split2") {
+    bandSplitMidHigh = constrain(val, bandSplitLowMid + 1, 60);
+  }
+  
+  calibrationChanged = true;
+  lastAdjustmentTime = millis();
+  
+  server.send(200, "text/plain", String(val));
 }
 
 void handleCalibrateNoise() {
@@ -728,11 +759,24 @@ void handleCalibrateNoise() {
 }
 
 void handleRestoreDefaults() {
-  scalingL = 45.0;
-  scalingM = 15.0;
-  scalingH = 5.0;
+  sensL = 17;
+  sensM = 23;
+  sensH = 49;
+  bandSplitLowMid = 11;
+  bandSplitMidHigh = 49;
   saveCalibration();
   server.send(200, "text/plain", "Audio settings restored to defaults.");
+}
+
+void handleRestoreSensorDefaults() {
+  calTemp = 0.0;
+  calPress = 0.0;
+  calHum = 0.0;
+  nudgeTemp = 0.0;
+  nudgePress = 0.0;
+  nudgeHum = 0.0;
+  saveCalibration();
+  server.send(200, "text/plain", "Sensor calibration reset to raw values.");
 }
 
 void setupWiFi() {
@@ -768,7 +812,8 @@ void setupWiFi() {
   server.on("/calibrate", handleCalibrate);
   server.on("/calibrate_noise", handleCalibrateNoise);
   server.on("/restore_defaults", handleRestoreDefaults);
-  server.on("/save_audio", HTTP_POST, handleSaveAudio);
+  server.on("/restore_sensor_defaults", handleRestoreSensorDefaults);
+  server.on("/set_audio", handleSetAudio);
   server.begin();
   Serial.println("HTTP server started");
 }

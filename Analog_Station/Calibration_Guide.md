@@ -16,38 +16,38 @@ Welcome to the Analog Station! Follow these steps to connect to your device, cal
 ## 3. Configure & Calibrate
 1.  Open a web browser (Chrome, Safari, etc.).
 2.  Type **`192.168.4.1`** into the address bar and press Enter.
-3.  You should see the **Analog Station Config** page.
+3.  You should see the **Analog Station** interface.
 
 ### Mode Selection
 At the top of the page, use the buttons to switch between modes:
-*   **SENSOR MODE**: Displays Temperature, Humidity, and Pressure on the meters.
-*   **AUDIO MODE**: Displays a real-time spectrum analyzer (Low, Mid, High frequencies).
+*   **SENSOR**: Displays Temperature, Humidity, and Pressure on the meters.
+*   **AUDIO**: Displays a real-time spectrum analyzer (Low, Mid, High frequencies).
 
 ### Sensor Calibration
-This section allows you to calibrate the environmental sensors.
-*   **Ref (Reference Value):**
-    *   If you have a trusted reference thermometer or barometer, enter the *actual* value in the input box and click **Set**.
-    *   This calibrates the data reported by the station.
-*   **Nudge (+ / -):**
-    *   Use the **[ + ]** and **[ - ]** buttons to visually adjust the needle position.
-    *   This is useful if the data is correct but the mechanical meter needle is slightly misaligned.
+This section allows you to calibrate the environmental sensors. Each sensor (Temp, Humidity, Pressure) has its own card.
 
-### Audio Calibration
+*   **Reference Value (Ref):**
+    *   *Optional:* This allows you to calibrate the BME280 sensor to known correct value (e.g., from a trusted thermometer) in the input box labeled **"Ref"**.
+    *   Click **SET**. This calibrates the internal data offset. 
+*   **Nudge (+ / -):**
+    *   If needed, use the **"- Nudge"** and **"+ Nudge"** buttons to physically move the needle so it points to the correct value.
+
+### Audio Sensitivity
+Adjust the sliders to control how responsive the meters are to sound.
+*   **Sensitivity Sliders:**
+    *   **Higher number (Right)** = More sensitive (Meter moves more).
+    *   **Lower number (Left)** = Less sensitive (Meter moves less).
+    *   *Default values:* Low: `17`, Mid: `23`, High: `49`.
+*   **Saving Changes:**
+    *   Changes are **saved automatically** a few seconds after you stop adjusting the sliders.
+*   **Restore Defaults:**
+    *   Click **"Restore Default Settings"** to reset the sensitivity to the default values.
+
+### Noise Calibration
 *   **Noise Floor Calibration:**
-    *   If the meters are bouncing or jittery when the room is quiet, click **"Calibrate Noise Floor"**.
+    *   If the meters are bouncing or jittery when the room is quiet, click the **"CALIBRATE NOISE FLOOR"** button.
     *   You will be asked to keep the room silent for 2 seconds.
     *   The device will measure the background noise and set a threshold to eliminate the jitter.
-
-### Audio Settings
-*   **Scaling Factors:**
-    *   These numbers control how sensitive the meters are to sound in Audio Mode.
-    *   **Lower number = More sensitive** (Meter moves more).
-    *   **Higher number = Less sensitive** (Meter moves less).
-    *   *Default values:* Low: `45`, Mid: `15`, High: `5`.
-*   **Restore Defaults:**
-    *   Click **"Restore Default Audio Settings"** to reset the scaling factors to their defaults.
-*   **Save:**
-    *   Click **"Save Audio Settings"** to apply your custom scaling values.
 
 ## 4. Troubleshooting
 If you cannot connect via Wi-Fi:
