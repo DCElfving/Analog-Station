@@ -254,8 +254,8 @@ void processSensorMode() {
   float meterHum = finalHum + nudgeHum;
 
   // Scale to meter range (0-255)
-  // Temp Range: 32F - 100F
-  int pwmTemp = constrain((int)((meterTemp - 32.0f) * (255.0f / 68.0f)), 0, 255);
+  // Temp Range: 20F - 120F
+  int pwmTemp = constrain((int)((meterTemp - 20.0f) * (255.0f / 100.0f)), 0, 255);
   
   // Pressure Range: 980 - 1030 hPa
   int pwmPress = constrain((int)((meterPress - 980.0f) * (255.0f / 50.0f)), 0, 255);
