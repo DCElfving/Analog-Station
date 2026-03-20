@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Analog Station</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" content="#f2f2f2">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@200;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-color: #d9d2c6; /* Beige */
+      --header-bg: #CFC6B7; /* Darker Beige for Masthead */
+      --card-bg: #eceae4; /* Slightly lighter/cleaner beige for panels */
+      --text-main: #4a453e; /* Dark Brown/Charcoal mix */
+      --text-muted: #8c867a; /* Muted Beige-Grey */
+      --accent-orange: #ed8008;
+      --accent-red-orange: #ed3f1c;
+      --accent-dark-red: #bf1b1b;
+      --accent-olive: #9B9129; /* Updated Green */
+      --accent-yellow: #f5b700; /* Yellow */
+      --border-color: #c0b9ad;
+      --track-bg: #c0b9ad;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    /* UI Masthead Wrapper */
+    .ui-masthead {
+      position: sticky;
+      top: 0;
+      z-index: 500;
+      background-color: var(--header-bg);
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    body {
+      font-family: 'Barlow', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh; /* Allow scroll */
+    }
+
+    /* Container */
+    .app-container {
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      padding: 20px; /* Symmetry with Body Top Padding */
+    }
+
+    /* Header / Logo */
+    header {
+      width: 100%;
+      margin-top: 0;
+      margin-bottom: 0; 
+      border-bottom: none; /* Removed to unify with Nav */
+      background: var(--header-bg);
+      padding: 20px 20px 12px 20px; /* Internal padding */
+      display: flex;
+      justify-content: center; /* Center the inner content */
+      flex-shrink: 0;
+    }
+    
+    .header-inner {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text-main);
+    }
+
+    .device-id {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Mode Selector (Tabs) */
+    .mode-nav {
+      width: 100%;
+      margin: 0;
+      background: var(--header-bg); /* Matches body/header for unity */
+      padding: 0 20px; 
+      /* Removed Sticky from here, moved to .ui-masthead wrapper */
+      
+      border-bottom: none; 
+      border-top: 1px solid rgba(0,0,0,0.1); /* Subtle separator from header */
+      border-radius: 0;
+      height: 50px;
+      box-sizing: border-box;
+      display: flex;
+      justify-content: center;
+    }
+    
+    .nav-inner {
+      width: 100%;
+      max-width: 480px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      height: 100%;
+      border-left: 1px solid rgba(0,0,0,0.1);
+    }
+
+    .btn-mode {
+      background: transparent;
+      border: none;
+      border-right: 1px solid rgba(0,0,0,0.1);
+      font-family: 'Barlow', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 0;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: row; /* Icon LEFT of text */
+      justify-content: center;
+      align-items: center;
+      gap: 6px; /* Space between icon/text */
+      height: 100%; /* Fill Grid Cell */
+      width: 100%;
+    }
+
+    .btn-mode svg {
+      width: 20px; /* Smaller Icons */
+      height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s;
+    }
+    
+    /* Active States with Colors */
+    .btn-mode.active {
+      background: var(--bg-color); /* Main body color for active state */
+      box-shadow: none;
+      color: var(--text-main);
+    }
+
+    /* Audio: Orange */
+    #btn_audio.active svg { stroke: var(--accent-orange); }
+
+    /* Sensor: Olive (Fill based) */
+    #btn_sensor.active svg { color: var(--accent-olive); }
+
+    /* Settings: Red-Orange */
+    #btn_calibrate.active svg { stroke: var(--accent-red-orange); }
+
+    .btn-mode:hover {
+      color: var(--text-main);
+      background: rgba(255,255,255,0.1);
+    }
+
+    /* Audio Panel */
+    #audio-ui.content-panel.show {
+        /* Ensure meters fill space */
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Main Content Area */
+    .content-panel {
+      background: var(--card-bg);
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      padding: 16px; /* Matched internal padding */
+      margin-bottom: 0px; 
+      border: 1px solid var(--border-color);
+      display: none; 
+      flex-direction: column;
+      flex-grow: 1; /* Fills remaining height in flex container */
+      height: auto; 
+    }
+
+    #calibration-ui.content-panel {
+        /* Standard flow */
+    }
+
+    .content-panel.show { 
+        display: flex; 
+        animation: fadeUp 0.3s ease-out; 
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* METERS */
+    .meter-display {
+      background: var(--bg-color); /* Matches main beige background */
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      flex: 1; /* Grow! */
+      min-height: 60vh; /* Ensure visualization has height */
+    }
+    .meter-container {
+      display: flex;
+      justify-content: space-between;
+      flex: 1; /* Fill the meter display */
+      gap: 16px;
+    }
+    .meter-channel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .meter-track {
+      width: 100%;
+      flex-grow: 1;
+      background: #332f2a; /* Darker track */
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .meter-bar {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 0%;
+      background: var(--accent-orange);
+      transition: height 0.1s linear;
+      /* Discrete bars using mask */
+      -webkit-mask-image: linear-gradient(to bottom, transparent 2px, black 2px);
+      -webkit-mask-size: 100% 6px; /* 4px bar, 2px gap */
+      mask-image: linear-gradient(to bottom, transparent 2px, black 2px);
+      mask-size: 100% 6px;
+    }
+    .meter-label {
+      margin-top: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* SENSORS (Monitor) */
+    .sensor-grid {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      gap: 16px;
+    }
+    .sensor-card {
+      background: #eceae4; /* Same as panel to look clean, or slightly darker: #e6e2db */
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      flex: 1; /* Fill vertical space */
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start; /* Align content to top initially */
+      position: relative;
+    }
+    
+    .sensor-val {
+      display: block;
+      font-size: 6rem; /* Even larger */
+      font-weight: 200; /* Thinner font */
+      color: var(--accent-olive); /* Olive for numbers */
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      margin: auto 0; /* Center vertically */
+      text-align: center;
+      width: 100%;
+    }
+    /* Removed .sensor-unit styling as we will merge it */
+    
+    .sensor-label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--accent-olive); /* Olive for labels */
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      text-align: left;
+      display: block;
+      width: 100%;
+    }
+
+    /* CALIBRATION UI */
+    .cal-tabs {
+      display: flex;
+      width: 100%;
+      margin: 0 0 24px 0;
+      border-bottom: 1px solid var(--border-color);
+      background: rgba(0,0,0,0.02); /* Very subtle contrast */
+    }
+    .tab-btn {
+      flex: 1; /* Span width equally */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: none;
+      border: none;
+      padding: 16px;
+      font-family: 'Barlow', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+    }
+    .tab-btn:first-child {
+        border-top-left-radius: 12px;
+    }
+    .tab-btn:last-child {
+        border-top-right-radius: 12px;
+    }
+    .tab-btn.active {
+      color: var(--text-main);
+      font-weight: 600;
+      background: rgba(255,255,255,0.2);
+    }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 0; right: 0;
+      height: 3px;
+      background: var(--accent-red-orange);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* CONTROLS (Sliders & Buttons) */
+    .control-group {
+      margin-bottom: 24px;
+    }
+    .control-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      /* Match .meter-label style */
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    /* Value mimics label style but maybe slightly brighter if needed, or identical per request */
+    .control-val { 
+        font-family: inherit; 
+        font-weight: inherit; 
+        color: var(--accent-red-orange);
+    }
+    
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+      margin: 8px 0;
+    }
+    input[type=range]:focus { outline: none; }
+    
+    /* Track */
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      background: var(--track-bg); /* Use variable instead of #222 */
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    /* Thumb */
+    input[type=range]::-webkit-slider-thumb {
+      height: 24px;
+      width: 24px;
+      border-radius: 50%;
+      background: var(--accent-red-orange); /* Red-Orange for Settings */
+      border: 1px solid rgba(0,0,0,0.1);
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -10px; /* Center on track */
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform 0.1s, background 0.1s;
+    }
+    input[type=range]::-webkit-slider-thumb:active {
+      transform: scale(1.1);
+      background: #777;
+    }
+
+    button.action-btn {
+      width: 100%;
+      background: #4a453e; /* Dark Brown/Charcoal mix */
+      color: #eceae4; /* Light beige text */
+      border: 1px solid var(--border-color);
+      padding: 14px;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button.action-btn:hover { background: #5c564f; color: white; }
+    button.action-btn:active { transform: scale(0.98); box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+    
+    button.secondary-btn {
+      width: 100%;
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    button.secondary-btn:hover { border-color: var(--text-main); color: var(--text-main); }
+
+    .help-text {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-muted); /* Keep muted for help text? User said "font and weight". Preserving color context logic unless bad. */
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+    
+    hr {
+      border: 0; 
+      border-top: 1px solid var(--border-color);
+      margin: 24px 0;
+    }
+    
+    /* Diagnostics Table */
+    .diag-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    .diag-table td {
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .diag-table td:last-child {
+      text-align: right;
+      font-family: 'Barlow', monospace;
+      color: var(--accent-red-orange);
+    }
+  </style>
+  <script>
+    // ----- WEBSOCKET / POLLING LOGIC -----
+    var pollInterval = null;
+    var g_currentMode = ""; // Track current system mode
+
+    function loadStatus() {
+        console.log("Fetching status...");
+        fetch('/status.json')
+            .then(response => response.json())
+            .then(data => {
+                g_currentMode = data.mode; // Update local state
+                updateUI(data);
+                
+                // Dynamic polling rate logic preserved
+                var rate = 3000;
+                var calibrateAudio = (data.mode == "calibrate" && data.calTab == "audio");
+                if(data.mode == "audio" || calibrateAudio) rate = 100; 
+                else if(data.mode == "sensor") rate = 1000;
+                
+                clearTimeout(pollInterval);
+                pollInterval = setTimeout(loadStatus, rate);
+            })
+            .catch(err => {
+                console.error("Failed to load:", err);
+                clearTimeout(pollInterval);
+                pollInterval = setTimeout(loadStatus, 5000);
+            });
+    }
+
+    function updateUI(data) {
+        // Safe update helper
+        const setTxt = (id, val) => { const el = document.getElementById(id); if(el) el.innerText = val; };
+        const setVal = (id, val) => { const el = document.getElementById(id); if(el) el.value = val; };
+
+        // 1. Monitor Section
+        setTxt('monitor_temp', parseFloat(data.temp).toFixed(0));
+        setTxt('monitor_hum', parseFloat(data.hum).toFixed(0));
+        setTxt('monitor_press', parseFloat(data.press).toFixed(0));
+
+        // 2. Calibration Section Labels
+        setTxt('cur_temp', parseFloat(data.temp).toFixed(1));
+        setTxt('cur_hum', parseFloat(data.hum).toFixed(1));
+        setTxt('cur_press', parseFloat(data.press).toFixed(1));
+
+        // 3. Raw Values
+        if(data.rawTemp !== undefined) {
+             setTxt('raw_temp', data.rawTemp);
+             setTxt('raw_hum', data.rawHum);
+             setTxt('raw_press', data.rawPress);
+        }
+
+        // 4. Meters (Audio)
+        if(data.audioL !== undefined) {
+            const updateBars = (cls, val) => {
+                var bars = document.getElementsByClassName(cls);
+                for(var i=0; i<bars.length; i++) bars[i].style.height = (val / 255 * 100) + "%";
+            };
+            updateBars('meter-bar-low', data.audioL);
+            updateBars('meter-bar-mid', data.audioM);
+            updateBars('meter-bar-high', data.audioH);
+        }
+
+        // 5. Nudge Sliders
+        const updateSlider = (sliderId, dispId, val) => {
+            if(document.activeElement.id !== sliderId) {
+                setVal(sliderId, val);
+            }
+        };
+        updateSlider('slider_nudgeTemp', 'disp_nudgeTemp', data.nudgeTemp);
+        updateSlider('slider_nudgeHum', 'disp_nudgeHum', data.nudgeHum);
+        updateSlider('slider_nudgePress', 'disp_nudgePress', data.nudgePress);
+
+        // 6. Sensitivity Sliders
+        setVal('slider_sensL', data.sensL); setTxt('disp_sensL', data.sensL);
+        setVal('slider_sensM', data.sensM); setTxt('disp_sensM', data.sensM);
+        setVal('slider_sensH', data.sensH); setTxt('disp_sensH', data.sensH);
+
+        // 7. Mode & Tabs State Management
+        // Highlight correct Mode Button
+        document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+        const activeBtn = document.getElementById('btn_' + data.mode);
+        if(activeBtn) activeBtn.classList.add('active');
+
+        // Show correct Panel
+        var drawers = ['calibration-ui', 'sensor-ui', 'audio-ui'];
+        const uiMap = {
+            'audio': 'audio-ui',
+            'sensor': 'sensor-ui',
+            'calibrate': 'calibration-ui'
+        };
+        var targetDrawer = uiMap[data.mode];
+        
+        // Hide others, Show target (Simple visibility toggle)
+        drawers.forEach(id => {
+            var el = document.getElementById(id);
+            if(el) {
+                if(id == targetDrawer) el.classList.add('show');
+                else el.classList.remove('show');
+            }
+        });
+    }
+
+    // --- Control Functions ---
+
+    function switchMode(mode) {
+      // Mapping
+      const uiMap = {
+        'audio': 'audio-ui',
+        'sensor': 'sensor-ui',
+        'calibrate': 'calibration-ui'
+      };
+      const dotMap = ['audio', 'sensor', 'calibrate'];
+      const targetId = uiMap[mode];
+
+      // Optimistic Update
+      // 1. Buttons
+      document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById("btn_" + mode);
+      if(btn) btn.classList.add('active');
+      
+      // 2. Panels
+      document.querySelectorAll('.content-panel').forEach(p => p.classList.remove('show'));
+      const panel = document.getElementById(targetId);
+      if(panel) panel.classList.add('show');
+
+      fetch('/switch_mode?mode=' + mode).then(() => loadStatus());
+    }
+
+    function openTab(name) {
+       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+       
+       document.getElementById(name).classList.add('active');
+       document.getElementById("btn_tab_" + name).classList.add('active');
+       
+       fetch('/set_cal_tab?tab=' + name);
+    }
+
+    function setNudge(id, val) {
+       fetch('/set_nudge?id=' + id + '&val=' + val);
+    }
+    
+    function setAudio(id, val) {
+        document.getElementById('disp_' + id).innerText = val;
+        fetch('/set_audio?id=' + id + '&val=' + val);
+    }
+
+    function calibrateRef() {
+        if(!confirm("Reference Calibration allows you to offset the sensor readings to match a known source.\n\nFeature coming soon!")) return;
+        // Placeholder for future implementation
+    }
+
+    // --- Actions ---
+
+    function resetNeedleOffsets() {
+        if(!confirm("Reset all offsets?")) return;
+        setNudge('temp', 0); setNudge('hum', 0); setNudge('press', 0);
+        // Optimistic UI updates are handled by setNudge/polling, strictly speaking
+        // but for responsiveness we could update DOM here too.
+    }
+
+    function calibrateNoise() {
+      const btn = document.getElementById('btn_noise');
+      const originalText = btn.innerText;
+      btn.innerText = "Calibrating...";
+      fetch('/calibrate_noise')
+        .then(res => res.text())
+        .then(msg => { 
+          alert(msg);
+          btn.innerText = originalText;
+        });
+    }
+
+    function restoreDefaults() {
+      if(confirm('Restore default audio settings?')) {
+          fetch('/restore_defaults').then(res => res.text()).then(msg => { alert(msg); loadStatus(); });
+      }
+    }
+    
+    function restoreSensorDefaults() {
+      if(confirm('Restore default sensor calibration?')) {
+          fetch('/restore_sensor_defaults').then(res => res.text()).then(msg => { alert(msg); loadStatus(); });
+      }
+    }
+
+    // Init
+    window.onload = function() {
+        loadStatus();
+    };
+  </script>
+</head>
+<body>
+    
+  <div class="ui-masthead">
+    <header>
+      <div class="header-inner">
+        <h1>Analog Station</h1>
+        <span class="device-id">V 2.0</span>
+      </div>
+    </header>
+
+    <!-- Navigation / Mode Switcher -->
+    <nav class="mode-nav" role="tablist">
+      <div class="nav-inner">
+        <button id="btn_audio" class="btn-mode active" onclick="switchMode('audio')">
+            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            Audio
+        </button>
+        <button id="btn_sensor" class="btn-mode" onclick="switchMode('sensor')">
+            <svg viewBox="0 0 100 100" style="fill: currentColor; stroke: currentColor; stroke-width: 2; transform: scale(1.15);">
+                <path d="M58.62,73.51l4.38-.2c6.73,0,12.49-5.27,12.49-12,0-3.26-1.29-6.23-3.39-8.42,4.98-2.22,8.46-7.2,8.46-13,0-7.86-6.39-14.25-14.25-14.25-6.46,0-11.9,4.33-13.64,10.24-2.32-1.02-4.89-1.6-7.58-1.6-9.03,0-16.6,6.37-18.47,14.85-6.6.14-11.94,5.55-11.94,12.18s5.47,12.2,12.2,12.2h7.6M38.48,73.51h16.14M63.29,69.51H26.88c-4.52,0-8.2-3.68-8.2-8.2,0-4.28,3.3-7.8,7.49-8.16,0,.02,0,.03,0,.05v2.92c0,1.1.9,2,2,2s2-.9,2-2v-2.92c0-8.23,6.69-14.92,14.92-14.92s14.92,6.69,14.92,14.92v.84h0s0,.05,0,.07v2c0,1.1.9,2,2,2s2-.9,2-2v-2.92s0-.03,0-.05c4.19.36,7.49,3.88,7.49,8.16,0,4.52-3.68,8.2-8.2,8.2ZM67.85,50.02c-1.33-.54-2.78-.86-4.29-.89-1-4.56-3.66-8.49-7.3-11.17.91-4.73,5.07-8.32,10.06-8.32,5.65,0,10.25,4.6,10.25,10.25,0,5.13-3.79,9.38-8.72,10.12Z"/>
+                <path d="M66.31,22.73c1.1,0,2-.9,2-2v-5.83c0-1.1-.9-2-2-2s-2,.9-2,2v5.83c0,1.1.9,2,2,2Z"/>
+                <path d="M91.32,37.89h-5.83c-1.1,0-2,.9-2,2s.9,2,2,2h5.83c1.1,0,2-.9,2-2s-.9-2-2-2Z"/>
+                <path d="M81.28,27.75l4.12-4.12c.78-.78.78-2.05,0-2.83-.78-.78-2.05-.78-2.83,0l-4.12,4.13c-.78.78-.78,2.05,0,2.83s2.05.78,2.83,0Z"/>
+                <path d="M81.28,52.03c-.78-.78-2.05-.78-2.83,0-.78.78-.78,2.05,0,2.83l4.12,4.12c.78.78,2.05.78,2.83,0,.78-.78.78-2.05,0-2.83l-4.12-4.12Z"/>
+                <path d="M51.35,27.75c.78.78,2.05.78,2.83,0,.78-.78.78-2.05,0-2.83l-4.13-4.12c-.78-.78-2.05-.78-2.83,0-.78.78-.78,2.05,0,2.83l4.13,4.12Z"/>
+            </svg>
+            Sensor
+        </button>
+        <button id="btn_calibrate" class="btn-mode" onclick="switchMode('calibrate')">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Settings
+        </button>
+      </div>
+    </nav>
+  </div>
+
+    <div class="app-container">
+
+    <!-- Audio Panel -->
+    <main id="audio-ui" class="content-panel show">
+      <div class="sensor-label" style="margin-bottom: 16px;">Audio Spectrum Analysis</div>
+      <div class="meter-display">
+        <div class="meter-container">
+          <!-- Low -->
+          <div class="meter-channel">
+              <div class="meter-track">
+                  <div class="meter-bar meter-bar-low"></div>
+              </div>
+              <span class="meter-label">Bass</span>
+          </div>
+          <!-- Mid -->
+          <div class="meter-channel">
+              <div class="meter-track">
+                  <div class="meter-bar meter-bar-mid"></div>
+              </div>
+              <span class="meter-label">Mid</span>
+          </div>
+          <!-- High -->
+          <div class="meter-channel">
+              <div class="meter-track">
+                  <div class="meter-bar meter-bar-high"></div>
+              </div>
+              <span class="meter-label">Treb</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Sensor Panel -->
+    <main id="sensor-ui" class="content-panel">
+      <div class="sensor-grid">
+        <div class="sensor-card">
+          <span class="sensor-label">Temperature &deg;F</span>
+          <span class="sensor-val" id="monitor_temp">--</span>
+        </div>
+        <div class="sensor-card">
+           <span class="sensor-label">Humidity %</span>
+           <span class="sensor-val" id="monitor_hum">--</span>
+        </div>
+        <div class="sensor-card full-width">
+           <span class="sensor-label">Pressure hPa</span>
+           <span class="sensor-val" id="monitor_press">--</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Calibration / Settings Panel -->
+    <main id="calibration-ui" class="content-panel">
+      
+      <div class="cal-tabs">
+        <button id="btn_tab_sensor" class="tab-btn active" onclick="openTab('sensor')">Sensor</button>
+        <button id="btn_tab_audio" class="tab-btn" onclick="openTab('audio')">Audio</button>
+      </div>
+
+      <!-- Env Settings -->
+      <div id="sensor" class="tab-content active">
+        <p class="help-text">Fine-tune meter needle positions to align with digital readings.</p>
+        
+        <!-- Temp -->
+        <div class="control-group">
+          <div class="control-header">
+            <span>Adjust temperature meter offset:</span>
+            <span class="control-val"><span id="cur_temp">--</span>&deg;F</span>
+          </div>
+          <input type="range" id="slider_nudgeTemp" min="-20" max="20" step="0.5" value="0" 
+             oninput="setNudge('temp', this.value)">
+        </div>
+
+        <!-- Hum -->
+        <div class="control-group">
+          <div class="control-header">
+             <span>Adjust humidity meter offset:</span>
+             <span class="control-val"><span id="cur_hum">--</span>%</span>
+          </div>
+          <input type="range" id="slider_nudgeHum" min="-20" max="20" step="1" value="0" 
+             oninput="setNudge('hum', this.value)">
+        </div>
+
+        <!-- Press -->
+        <div class="control-group">
+          <div class="control-header">
+             <span>Adjust pressure meter offset:</span>
+             <span class="control-val"><span id="cur_press">--</span> hPa</span>
+          </div>
+          <input type="range" id="slider_nudgePress" min="-20" max="20" step="1" value="0" 
+             oninput="setNudge('press', this.value)">
+        </div>
+
+        <button class="secondary-btn" onclick="resetNeedleOffsets()">Reset Offsets</button>
+
+        <hr>
+
+        <p class="help-text" style="margin-bottom: 8px;">If needed, calibrate sensors with a known reference source.</p>
+        <button id="btn_cal_ref" class="action-btn" style="margin-bottom: 24px;" onclick="calibrateRef()">Reference Calibration</button>
+
+        <div style="margin-bottom: 24px;">
+          <h4 style="margin:0 0 12px 0; font-size:0.875rem;">Diagnostics</h4>
+          <table class="diag-table">
+            <tr><td>Raw Temp</td><td id="raw_temp">--</td></tr>
+            <tr><td>Raw Humidity</td><td id="raw_hum">--</td></tr>
+            <tr><td>Raw Pressure</td><td id="raw_press">--</td></tr>
+          </table>
+        </div>
+         <button class="secondary-btn" onclick="restoreSensorDefaults()">Restore Default Calibration</button>
+      </div>
+
+      <!-- Audio Settings -->
+      <div id="audio" class="tab-content">
+        <p class="help-text">Adjust input sensitivity for each frequency band.</p>
+
+        <!-- Mini Meters for feedback -->
+        <div class="meter-container" style="height:240px; margin-bottom:32px;">
+            <div class="meter-channel">
+                <div class="meter-track"><div class="meter-bar meter-bar-low"></div></div>
+                <span class="meter-label">Bass</span>
+            </div>
+            <div class="meter-channel">
+                <div class="meter-track"><div class="meter-bar meter-bar-mid"></div></div>
+                <span class="meter-label">Mid</span>
+            </div>
+            <div class="meter-channel">
+                <div class="meter-track"><div class="meter-bar meter-bar-high"></div></div>
+                <span class="meter-label">Treb</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+          <div class="control-header"><span>Bass Sensitivity</span> <span class="control-val" id="disp_sensL">--</span></div>
+          <input type="range" id="slider_sensL" min="1" max="100" value="17" onchange="setAudio('sensL', this.value)" oninput="document.getElementById('disp_sensL').innerText=this.value">
+        </div>
+        
+        <div class="control-group">
+          <div class="control-header"><span>Mid Sensitivity</span> <span class="control-val" id="disp_sensM">--</span></div>
+          <input type="range" id="slider_sensM" min="1" max="100" value="23" onchange="setAudio('sensM', this.value)" oninput="document.getElementById('disp_sensM').innerText=this.value">
+        </div>
+
+        <div class="control-group">
+          <div class="control-header"><span>Treble Sensitivity</span> <span class="control-val" id="disp_sensH">--</span></div>
+          <input type="range" id="slider_sensH" min="1" max="100" value="49" onchange="setAudio('sensH', this.value)" oninput="document.getElementById('disp_sensH').innerText=this.value">
+        </div>
+
+        <button id="btn_noise" class="action-btn" onclick="calibrateNoise()">Calibrate Noise Floor</button>
+        <button class="secondary-btn" onclick="restoreDefaults()">Restore Audio Defaults</button>
+      </div>
+
+    </main>
+
+  </div>
+
+</body>
+</html>

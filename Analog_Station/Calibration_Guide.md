@@ -18,39 +18,36 @@ Welcome to the Analog Station! Follow these steps to connect to your device, cal
 2.  Type **`192.168.4.1`** into the address bar and press Enter.
 3.  You should see the **Analog Station** interface.
 
-### Mode Selection
-At the top of the page, use the buttons to switch between modes:
-*   **SENSOR**: Displays Temperature, Humidity, and Pressure on the meters.
-*   **AUDIO**: Displays a real-time spectrum analyzer (Low, Mid, High frequencies).
+### Mode Selection (Top Navigation)
+Use the navigation bar at the top of the screen to switch views:
+*   **AUDIO**: Displays a real-time spectrum analyzer (Bass, Mid, Treble) on the meters.
+*   **SENSOR**: Displays digital readouts of Temperature, Humidity, and Pressure.
+*   **SETTINGS**: Access calibration controls for both sensors and audio.
 
-### Sensor Calibration
-This section allows you to calibrate the environmental sensors. Each sensor (Temp, Humidity, Pressure) has its own card.
+### Settings & Calibration
+Tap the **Settings** icon (gear/tools) in the top navigation. Then use the tabs at the top of the panel ("Sensor" / "Audio") to switch between categories.
 
-*   **Reference Value (Ref):**
-    *   *Optional:* This allows you to calibrate the BME280 sensor to known correct value (e.g., from a trusted thermometer) in the input box labeled **"Ref"**.
-    *   Click **SET**. This calibrates the internal data offset. 
-*   **Nudge (+ / -):**
-    *   If needed, use the **"- Nudge"** and **"+ Nudge"** buttons to physically move the needle so it points to the correct value.
+#### Sensor Settings (Top Tab "SENSOR")
+Use this section to align the analog meter needles with the digital readings.
+1.  **Meter Offset Sliders:**
+    *   Drag the slider left or right to **Adjust temperature meter offset** (or Humidity/Pressure).
+    *   The digital reading is shown in red next to the slider header.
+    *   Use this if the needle position doesn't perfectly match the digital value shown.
+2.  **Diagnostics:**
+    *   View raw sensor data at the bottom of the page verify sensor health.
+3.  **Advanced:**
+    *   **Reference Calibration:** If needed, calibrate sensors with a known reference source.
+    *   **Restore Default Calibration:** Resets all sensor offsets to defaults.
 
-### Audio Sensitivity
-Adjust the sliders to control how responsive the meters are to sound.
-*   **Sensitivity Sliders:**
+#### Audio Settings (Top Tab "AUDIO")
+Use this section to tune how the meters react to sound and music.
+1.  **Sensitivity Sliders:**
+    *   **Bass / Mid / Treble Sensitivity:** Adjusts the gain for each frequency band.
     *   **Higher number (Right)** = More sensitive (Meter moves more).
     *   **Lower number (Left)** = Less sensitive (Meter moves less).
-    *   *Default values:* Low: `17`, Mid: `23`, High: `49`.
-*   **Saving Changes:**
-    *   Changes are **saved automatically** a few seconds after you stop adjusting the sliders.
-*   **Restore Defaults:**
-    *   Click **"Restore Default Settings"** to reset the sensitivity to the default values.
+2.  **Noise Floor:**
+    *   **Calibrate Noise Floor:** If the meters are bouncing or jittery when the room is quiet, click this button.
+    *   Keep the room silent for 2 seconds while it measures background noise.
+3.  **Restore Defaults:** Resets sensitivity to factory presets.
 
-### Noise Calibration
-*   **Noise Floor Calibration:**
-    *   If the meters are bouncing or jittery when the room is quiet, click the **"CALIBRATE NOISE FLOOR"** button.
-    *   You will be asked to keep the room silent for 2 seconds.
-    *   The device will measure the background noise and set a threshold to eliminate the jitter.
-
-## 4. Troubleshooting
-If you cannot connect via Wi-Fi:
-1.  Open the Arduino IDE or a Serial Terminal (Baud Rate: 115200).
-2.  Reset the device.
-3.  The Serial Monitor will display the **Wi-Fi Name** and **IP Address** during boot.
+*Note: All settings are saved automatically.*

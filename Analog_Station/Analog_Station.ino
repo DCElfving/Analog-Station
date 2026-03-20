@@ -1,4 +1,4 @@
-/* THE ANALOG STATION! - An audio & environmental monitor built with an ESP32-C3.
+/* THE ANALOG STATION - An audio & environmental monitor built with an ESP32-C3.
 Created in San Francisco for teaching and learning. 2025 */
 
 // Required libraries
@@ -11,6 +11,7 @@ Created in San Francisco for teaching and learning. 2025 */
 #include <WiFi.h>
 #include <WebServer.h>
 #include <esp_wifi.h>
+#include <LittleFS.h>
 
 // Hardware pin assignments
 #define MIC_PIN 4           
@@ -38,6 +39,11 @@ WebServer server(80);
 char ssid[32]; // Global to store unique network name
 bool sensorMode = false;
 bool lastToggleState = HIGH;
+
+// System Mode State
+// "normal" (Respects Toggle Switch & sensorMode) or "calibrate" (Respects calTab)
+String systemMode = "normal";
+String calTab = "sensor";
 
 // Forward declarations
 void setupWiFi();
@@ -73,6 +79,11 @@ int sensL = 17;
 int sensM = 23;
 int sensH = 49;
 
+// Current Audio Levels (for Web Interface)
+int webAudioL = 0;
+int webAudioM = 0;
+int webAudioH = 0;
+
 // Audio Band Config (BINS)
 // Bins are roughly 31.25Hz apart (4000Hz / 128)
 int bandSplitLowMid = 11;
@@ -94,14 +105,22 @@ void setup() {
   
   // Wait shortly for serial, but don't block long if not connected
   unsigned long start = millis();
-  while (!Serial && millis() - start < 500); 
+  while (!Serial && millis() - start < 3000); 
+  delay(1000);
 
   Serial.println("\n\n--- Analog Station Booting ---");
 
   // Initialize I2C and BME280 sensor
   Wire.begin(SDA_PIN, SCL_PIN);
-  if (!bme.begin(0x76, &Wire)) {
-    Serial.println("BME280 initialization failed - check wiring");
+  Serial.println("Checking BME280 status...");
+  unsigned status = bme.begin(0x76, &Wire);
+  if (!status) {
+    Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
+    Serial.print("SensorID was: 0x"); Serial.println(bme.sensorID(),16);
+    Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
+    Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
+    Serial.print("        ID of 0x60 represents a BME 280.\n");
+    Serial.print("        ID of 0x61 represents a BME 680.\n");
   } else {
     Serial.println("BME280 initialized successfully on ESP32-C3");
   }
@@ -132,6 +151,11 @@ void setup() {
   // Load saved settings from non-volatile storage
   loadCalibration();
   
+  // Initialize File System
+  if(!LittleFS.begin(true)){
+    Serial.println("An Error has occurred while mounting LittleFS");
+  }
+
   // Initialize WiFi and Web Server
   setupWiFi();
 
@@ -145,13 +169,29 @@ void loop() {
   
   // Check toggle switch for mode changes
   bool currentToggleState = digitalRead(TOGGLE_PIN);
+  
+  // Logic: Detect CHANGE in switch position (Edge Detection).
+  // This allows the web app to set the mode freely, but if the user physically
+  // flips the switch, the device responds immediately.
   if (currentToggleState != lastToggleState) {
-    sensorMode = (currentToggleState == LOW);
-    lastToggleState = currentToggleState;
+      if (systemMode == "normal") {
+          sensorMode = (currentToggleState == LOW);
+      }
+      lastToggleState = currentToggleState;
+  }
+  
+  bool activeSensorMode = sensorMode;
+  
+  // Logic: "The device should reflect which ever tab is active in calibration mode"
+  if (systemMode == "calibrate") {
+      activeSensorMode = (calTab == "sensor");
+  } else {
+      // Normal mode uses the sensorMode (controlled by switch/web)
+      activeSensorMode = sensorMode;
   }
   
   // Process audio or sensor mode
-  sensorMode ? processSensorMode() : processAudioMode();
+  activeSensorMode ? processSensorMode() : processAudioMode();
   
   // Auto-save calibration if changed and idle
   if (calibrationChanged && (millis() - lastAdjustmentTime > AUTO_SAVE_DELAY)) {
@@ -344,6 +384,11 @@ void processAudioMode() {
   int pwmM = processBand(levelMid, noiseFloorM, gainM, smoothMid, SMOOTHING_MH);
   int pwmH = processBand(levelHigh, noiseFloorH, gainH, smoothHigh, SMOOTHING_MH);
 
+  // Update globals for web
+  webAudioL = pwmL;
+  webAudioM = pwmM;
+  webAudioH = pwmH;
+
   // 6. Output to Meters
   ledcWrite(METER_LOW, pwmL);
   ledcWrite(METER_MID, pwmM);
@@ -421,209 +466,21 @@ void saveCalibration() {
 // Wi-Fi & Web Server Functions
 // ==========================================
 
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-<head>
-  <title>Analog Station</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: left; margin:0; padding:20px; background:#121212; color:#e0e0e0; }
-    h2 { color: #ffc107; letter-spacing: 1px; margin-bottom: 20px; font-weight: 300; text-align: center; }
-    
-    /* Card Design */
-    .card { background: #1e1e1e; padding: 25px; margin: 20px auto; max-width: 420px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid #333; }
-    
-    /* Section Headers */
-    .section-title { text-align: left; color: #ffc107; text-transform: uppercase; font-size: 0.85em; letter-spacing: 1.5px; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 8px; font-weight: 600; }
-    
-    /* Rows & Inputs */
-    .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 10px; background: #2c2c2c; border-radius: 8px; } /* Medium Grey */
-    .val { width: 80px; color: #ffc107; font-family: monospace; font-size: 1.2em; text-align: right; margin-right: 15px; }
-    
-    input[type=number] { width: 90px; padding: 10px; border: 1px solid #444; background: #252525; color: #fff; border-radius: 6px; font-size: 1em; outline: none; transition: border-color 0.2s; }
-    input[type=number]:focus { border-color: #ffc107; }
-
-    input[type=text] { width: 90px; padding: 10px; border: 1px solid #444; background: #252525; color: #fff; border-radius: 6px; font-size: 1em; outline: none; transition: border-color 0.2s; }
-    input[type=text]:focus { border-color: #ffc107; }
-    
-    input[type=range] { width: 100%; margin-top: 10px; accent-color: #ffc107; height: 6px; border-radius: 3px; background: #444; }
-    
-    /* Buttons */
-    button { cursor: pointer; border: none; border-radius: 6px; padding: 12px 15px; font-weight: 600; font-size: 0.9em; transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
-    
-    .btn-mode { width:48%; background: #333; color: #aaa; }
-    .btn-mode.active { background: #ffc107; color: #121212; }
-    
-    .btn-cal { background: #ffc107; color: #121212; padding: 10px 15px; }
-    .btn-cal:hover { background: #e0a800; transform: translateY(-1px); }
-    
-    .btn-nudge { background: #333; color: #ccc; width: 48%; padding: 10px; font-size: 0.85em; border: 1px solid #444; }
-    .btn-nudge:hover { background: #444; color: #fff; border-color: #555; }
-    
-    .btn-ghost { background: transparent; color: #777; font-size: 0.8em; margin-top:15px; width:100%; text-decoration: underline; }
-    .btn-ghost:hover { color: #aaa; }
-
-    /* Sliders Container */
-    .slider-container { text-align: left; margin-bottom: 20px; padding: 15px; background: #252525; border-radius: 8px; border: 1px solid #333; }
-    .slider-label { display: flex; justify-content: space-between; font-size: 0.9em; color: #ddd; margin-bottom: 5px; font-weight: 500; }
-    .sub-text { font-size: 0.75em; color: #888; margin-top: 10px; margin-bottom: 10px; line-height: 1.4; }
-  </style>
-  <script>
-    function nudge(id, dir) {
-      fetch('/nudge?id=' + id + '&dir=' + dir)
-        .then(res => res.text())
-        .then(val => { 
-          console.log('Nudged', id, val);
-        });
-    }
-    function calibrate(id) {
-      let refVal = document.getElementById('ref_' + id).value;
-      if(!refVal) return;
-      fetch('/calibrate?id=' + id + '&value=' + refVal)
-        .then(res => res.text())
-        .then(val => { 
-          document.getElementById('cur_' + id).innerText = val; 
-          alert('Calibrated ' + id + ' to ' + val);
-        });
-    }
-    function calibrateNoise() {
-      document.getElementById('btn_noise').innerText = "Calibrating...";
-      fetch('/calibrate_noise')
-        .then(res => res.text())
-        .then(msg => { 
-          alert(msg);
-          document.getElementById('btn_noise').innerText = "Calibrate Noise Floor";
-        });
-    }
-    function setAudio(id, val) {
-        // Update display immediately
-        document.getElementById('disp_' + id).innerText = val;
-        // Debounce or just send? Sending on change (release) is fine. 
-        // For 'input' event (dragging), we might flood. 
-        // Using 'onchange' triggers on release. 'oninput' triggers on drag.
-        // Let's use fetch on change.
-        fetch('/set_audio?id=' + id + '&val=' + val);
-    }
-    function switchMode(mode) {
-      fetch('/switch_mode?mode=' + mode)
-        .then(res => res.text())
-        .then(msg => location.reload());
-    }
-    function restoreDefaults() {
-      if(!confirm('Restore default audio settings?')) return;
-      fetch('/restore_defaults')
-        .then(res => res.text())
-        .then(msg => { alert(msg); location.reload(); });
-    }
-    function restoreSensorDefaults() {
-      if(!confirm('Restore default sensor calibration (raw values)?')) return;
-      fetch('/restore_sensor_defaults')
-        .then(res => res.text())
-        .then(msg => { alert(msg); location.reload(); });
-    }
-  </script>
-</head>
-<body>
-  <h2>The Analog Station!</h2>
-  
-  <div class="card">
-    <div style="display:flex; gap:10px; justify-content:flex-start;">
-      <button class="btn-mode %BTN_SENSOR_ACTIVE%" onclick="switchMode('sensor')">Sensor</button>
-      <button class="btn-mode %BTN_AUDIO_ACTIVE%" onclick="switchMode('audio')">Audio</button>
-    </div>
-  </div>
-  
-  <div class="card">
-    <div class="section-title">Sensor Calibration</div>
-    <div class="sub-text">Set reference values to match your sensor an outside source. You can also nudge the needle for each meter to ensure accurate display.</div>
-    <div style="background:#252525; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #333;">
-        <div class="row" style="margin-bottom:10px; padding:0; background:none;">
-          <div style="flex:1;">
-            <div style="font-size:1.1em; text-align:left; color:#ccc; font-weight:500;">Temp</div>
-            <div class="val" id="cur_temp" style="text-align:left; color:#ffc107;">%TEMP% F</div>
-          </div>
-          <input type="text" id="ref_temp" placeholder="Ref Temp">
-          <button class="btn-cal" style="margin-left:10px;" onclick="calibrate('temp')">SET</button>
-        </div>
-        <div style="border-top:1px solid #333; margin:10px 0;"></div>
-        <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
-          <button class="btn-nudge" onclick="nudge('temp', -1)">- Nudge</button>
-          <button class="btn-nudge" onclick="nudge('temp', 1)">+ Nudge</button>
-        </div>
-    </div>
-
-    <div style="background:#252525; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #333;">
-        <div class="row" style="margin-bottom:10px; padding:0; background:none;">
-          <div style="flex:1;">
-            <div style="font-size:1.1em; text-align:left; color:#ccc; font-weight:500;">Humidity</div>
-            <div class="val" id="cur_hum" style="text-align:left; color:#ffc107;">%HUM% %</div>
-          </div>
-          <input type="text" id="ref_hum" placeholder="Ref Hum">
-          <button class="btn-cal" style="margin-left:10px;" onclick="calibrate('hum')">SET</button>
-        </div>
-        <div style="border-top:1px solid #333; margin:10px 0;"></div>
-        <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
-          <button class="btn-nudge" onclick="nudge('hum', -1)">- Nudge</button>
-          <button class="btn-nudge" onclick="nudge('hum', 1)">+ Nudge</button>
-        </div>
-    </div>
-
-    <div style="background:#252525; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #333;">
-        <div class="row" style="margin-bottom:10px; padding:0; background:none;">
-          <div style="flex:1;">
-            <div style="font-size:1.1em; text-align:left; color:#ccc; font-weight:500;">Pressure</div>
-            <div class="val" id="cur_press" style="text-align:left; color:#ffc107;">%PRESS% hPa</div>
-          </div>
-          <input type="text" id="ref_press" placeholder="Ref hPa">
-          <button class="btn-cal" style="margin-left:10px;" onclick="calibrate('press')">SET</button>
-        </div>
-        <div style="border-top:1px solid #333; margin:10px 0;"></div>
-        <div style="display:flex; justify-content:space-between; width:100%; gap:10px;">
-          <button class="btn-nudge" onclick="nudge('press', -1)">- Nudge</button>
-          <button class="btn-nudge" onclick="nudge('press', 1)">+ Nudge</button>
-        </div>
-    </div>
-    
-    <button class="btn-ghost" onclick="restoreSensorDefaults()">Restore Raw Sensor Values</button>
-  </div>
-
-  <div class="card">
-    <div class="section-title">Audio Sensitivity</div>
-    <div class="sub-text">Adjust the sensitivity of your meters. The defaults work well for ambient music.</div>
-    <div class="slider-container">
-      <div class="slider-label"><span>Low</span> <span id="disp_sensL">%SENSL%</span></div>
-      <div class="sub-text">90Hz - 340Hz</div>
-      <input type="range" min="1" max="100" value="%SENSL%" onchange="setAudio('sensL', this.value)" oninput="document.getElementById('disp_sensL').innerText=this.value">
-    </div>
-
-    <div class="slider-container">
-      <div class="slider-label"><span>Medium</span> <span id="disp_sensM">%SENSM%</span></div>
-      <div class="sub-text">375Hz - 1.5kHz</div>
-      <input type="range" min="1" max="100" value="%SENSM%" onchange="setAudio('sensM', this.value)" oninput="document.getElementById('disp_sensM').innerText=this.value">
-    </div>
-
-    <div class="slider-container">
-      <div class="slider-label"><span>High</span> <span id="disp_sensH">%SENSH%</span></div>
-      <div class="sub-text">1.5kHz - 2kHz</div>
-      <input type="range" min="1" max="100" value="%SENSH%" onchange="setAudio('sensH', this.value)" oninput="document.getElementById('disp_sensH').innerText=this.value">
-    </div>
-    
-    <button class="btn-ghost" onclick="restoreDefaults()">Restore Default Settings</button>
-  </div>
-  
-  <div class="card">
-    <div class="section-title">Calibration</div>
-    <div class="sub-text">If your meters seem to bounce during silence, this can help. Ensure the room is completely silent, then tap below to set the noise floor.</div>
-    <div style="color:#aaa; font-size:0.9em; margin-bottom:15px; line-height:1.4;">
-    </div>
-    <button id="btn_noise" style="width:100%; background:#333; color:#ffc107; border:1px solid #ffc107; padding:15px;" onclick="calibrateNoise()">CALIBRATE NOISE FLOOR</button>
-  </div>
-</body>
-</html>
-)rawliteral";
+// ==========================================
+// Wi-Fi & Web Server Functions
+// ==========================================
 
 void handleRoot() {
-  // Get fresh readings for display
+   File file = LittleFS.open("/index.html", "r");
+   if (!file) {
+      server.send(404, "text/plain", "File Not Found. Please upload LittleFS data.");
+      return;
+   }
+   server.streamFile(file, "text/html");
+   file.close();
+}
+
+void handleStatusJson() {
   float t = bme.readTemperature();
   float p = bme.readPressure() / 100.0F;
   float h = bme.readHumidity();
@@ -632,25 +489,50 @@ void handleRoot() {
   float curPress = p + calPress;
   float curHum = h + calHum;
 
-  String s = index_html;
-  s.replace("%TEMP%", String(curTemp, 1));
-  s.replace("%PRESS%", String(curPress, 1));
-  s.replace("%HUM%", String(curHum, 1));
+  String json = "{";
+  json += "\"temp\":" + String(curTemp, 1) + ",";
+  json += "\"press\":" + String(curPress, 1) + ",";
+  json += "\"hum\":" + String(curHum, 1) + ",";
+  json += "\"sensL\":" + String(sensL) + ",";
+  json += "\"sensM\":" + String(sensM) + ",";
+  json += "\"sensH\":" + String(sensH) + ",";
+  json += "\"nudgeTemp\":" + String(nudgeTemp, 1) + ",";
+  json += "\"nudgePress\":" + String(nudgePress, 1) + ",";
+  json += "\"nudgeHum\":" + String(nudgeHum, 1) + ",";
   
-  s.replace("%SENSL%", String(sensL));
-  s.replace("%SENSM%", String(sensM));
-  s.replace("%SENSH%", String(sensH));
+  // Include real-time audio levels
+  json += "\"audioL\":" + String(webAudioL) + ",";
+  json += "\"audioM\":" + String(webAudioM) + ",";
+  json += "\"audioH\":" + String(webAudioH) + ",";
   
-  // Update button colors based on current mode
-  if (sensorMode) {
-    s.replace("%BTN_SENSOR_ACTIVE%", "active");
-    s.replace("%BTN_AUDIO_ACTIVE%", "");
-  } else {
-    s.replace("%BTN_SENSOR_ACTIVE%", "");
-    s.replace("%BTN_AUDIO_ACTIVE%", "active");
+  // Send "calibrate" if that is the system mode, otherwise send "audio" or "sensor"
+  String reportedMode = (systemMode == "calibrate") ? "calibrate" : (sensorMode ? "sensor" : "audio");
+  
+  json += "\"mode\":\"" + reportedMode + "\",";
+  json += "\"calTab\":\"" + calTab + "\"";
+  json += "}";
+  
+  server.send(200, "application/json", json);
+}
+
+void handleSetNudge() {
+  if (!server.hasArg("id") || !server.hasArg("val")) {
+    server.send(400, "text/plain", "Missing args");
+    return;
   }
   
-  server.send(200, "text/html", s);
+  String id = server.arg("id");
+  float val = server.arg("val").toFloat();
+  
+  if (id == "temp") nudgeTemp = val;
+  else if (id == "press") nudgePress = val;
+  else if (id == "hum") nudgeHum = val;
+  
+  calibrationAdjustMode = true;
+  calibrationChanged = true;
+  lastAdjustmentTime = millis();
+  
+  server.send(200, "text/plain", String(val));
 }
 
 void handleSwitchMode() {
@@ -661,16 +543,36 @@ void handleSwitchMode() {
   
   String mode = server.arg("mode");
   if (mode == "sensor") {
+    systemMode = "normal";
     sensorMode = true;
     calibrationAdjustMode = false;
     lastSensorRead = 0; // Force immediate update
     server.send(200, "text/plain", "Switched to Sensor Mode");
   } else if (mode == "audio") {
+    systemMode = "normal";
     sensorMode = false;
     calibrationAdjustMode = false;
     server.send(200, "text/plain", "Switched to Audio Mode");
+  } else if (mode == "calibrate") {
+    systemMode = "calibrate";
+    calibrationAdjustMode = true; // Use faster updates?
+    server.send(200, "text/plain", "Switched to Calibration Mode");
   } else {
     server.send(400, "text/plain", "Invalid mode");
+  }
+}
+
+void handleSetCalTab() {
+  if (!server.hasArg("tab")) {
+    server.send(400, "text/plain", "Missing tab arg");
+    return;
+  }
+  String tab = server.arg("tab");
+  if (tab == "audio" || tab == "sensor") {
+      calTab = tab;
+      server.send(200, "text/plain", "Tab Set");
+  } else {
+      server.send(400, "text/plain", "Invalid Tab");
   }
 }
 
@@ -807,13 +709,20 @@ void setupWiFi() {
   Serial.println(IP);
   
   server.on("/", handleRoot);
+  server.on("/status.json", handleStatusJson);
   server.on("/nudge", handleNudge);
+  server.on("/set_nudge", handleSetNudge);
   server.on("/switch_mode", handleSwitchMode);
+  server.on("/set_cal_tab", handleSetCalTab);
   server.on("/calibrate", handleCalibrate);
   server.on("/calibrate_noise", handleCalibrateNoise);
   server.on("/restore_defaults", handleRestoreDefaults);
   server.on("/restore_sensor_defaults", handleRestoreSensorDefaults);
   server.on("/set_audio", handleSetAudio);
+  
+  // Fallback for other files
+  server.serveStatic("/", LittleFS, "/");
+
   server.begin();
   Serial.println("HTTP server started");
 }
